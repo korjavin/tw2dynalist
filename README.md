@@ -51,18 +51,14 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 4. Generate authentication tokens:
    - In your app settings, navigate to the "Keys and tokens" tab
    - You'll find your API Key and API Secret Key under "Consumer Keys"
-   - For the Access Token, you need to generate a Bearer Token:
-     - Go to the "Keys and tokens" tab
-     - Look for "Bearer Token" section
-     - Generate a new Bearer Token
-     - This token should be used as your `TWITTER_ACCESS_TOKEN`
-     - Note: The app now uses OAuth 2.0 authentication with a Bearer Token
-   - Make sure to save all values as they will be needed to configure the bot
+   - Generate Access Token and Secret by clicking "Generate" under "Authentication Tokens"
+   - Make sure to save all four values as they will be needed to configure the bot
+   - Note: The app now uses Twitter API v2 endpoints with OAuth 1.0a authentication
 
 5. Additional requirements:
    - Ensure your Twitter account has the necessary permissions to access the API
    - For production use, you may need to apply for Elevated access to the Twitter API
-   - The app now uses Twitter API v2 endpoints, which require a Bearer Token for authentication
+   - The app now uses Twitter API v2 endpoints, which require OAuth 1.0a User Context authentication
 
 ## Getting Dynalist API Token
 
@@ -78,7 +74,8 @@ docker run -d \
   -e DYNALIST_TOKEN=your_dynalist_token \
   -e TWITTER_API_KEY=your_twitter_api_key \
   -e TWITTER_API_SECRET=your_twitter_api_secret \
-  -e TWITTER_ACCESS_TOKEN=your_twitter_bearer_token \
+  -e TWITTER_ACCESS_TOKEN=your_twitter_access_token \
+  -e TWITTER_ACCESS_SECRET=your_twitter_access_secret \
   -e TW_USER=your_twitter_username \
   -e LOG_LEVEL=INFO \
   -v /path/to/cache:/app/cache \
@@ -99,7 +96,8 @@ go build -o tw2dynalist
 export DYNALIST_TOKEN=your_dynalist_token
 export TWITTER_API_KEY=your_twitter_api_key
 export TWITTER_API_SECRET=your_twitter_api_secret
-export TWITTER_ACCESS_TOKEN=your_twitter_bearer_token
+export TWITTER_ACCESS_TOKEN=your_twitter_access_token
+export TWITTER_ACCESS_SECRET=your_twitter_access_secret
 export TW_USER=your_twitter_username
 ./tw2dynalist
 ```
@@ -135,9 +133,9 @@ export LOG_LEVEL=DEBUG
 
 1. **Authentication Errors**:
    - Make sure your Twitter API credentials are correct and have the necessary permissions.
-   - Ensure you're using a valid Bearer Token for the `TWITTER_ACCESS_TOKEN` environment variable.
-   - The app now uses OAuth 2.0 authentication with Twitter API v2, which requires a Bearer Token.
-   - If you're getting a 401 Unauthorized error, check that your Bearer Token is valid and has not expired.
+   - The app now uses OAuth 1.0a authentication with Twitter API v2, which requires user context authentication.
+   - Ensure you're using valid OAuth tokens (API Key, API Secret, Access Token, Access Secret).
+   - If you're getting a 401 Unauthorized error, check that your tokens are valid and have not expired.
 
 2. **Rate Limiting**: Twitter API has rate limits. If you're experiencing issues, try increasing the check interval.
 

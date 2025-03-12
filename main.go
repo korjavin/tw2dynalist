@@ -14,19 +14,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dghubble/oauth1"
 	twitterv2 "github.com/g8rswimmer/go-twitter/v2"
 )
 
 // Configuration holds all environment variables
 type Configuration struct {
-	DynalistToken      string
-	TwitterAPIKey      string
-	TwitterAPISecret   string
-	TwitterAccessToken string // This is now the Bearer Token for OAuth2
-	TwitterUsername    string
-	CacheFilePath      string
-	CheckInterval      time.Duration
-	LogLevel           string
+	DynalistToken       string
+	TwitterAPIKey       string
+	TwitterAPISecret    string
+	TwitterAccessToken  string
+	TwitterAccessSecret string
+	TwitterUsername     string
+	CacheFilePath       string
+	CheckInterval       time.Duration
+	LogLevel            string
 }
 
 // Cache represents the structure to store processed tweets
@@ -54,14 +56,15 @@ type TwitterClient struct {
 	userID string
 }
 
-// OAuth2Authorizer implements the Authorizer interface for OAuth2
-type OAuth2Authorizer struct {
-	token string
+// OAuth1Authorizer implements the Authorizer interface for OAuth1
+type OAuth1Authorizer struct {
+	config *oauth1.Config
+	token  *oauth1.Token
 }
 
-// Add adds the OAuth2 authorization to the request
-func (a *OAuth2Authorizer) Add(req *http.Request) {
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", a.token))
+// Add adds the OAuth1 authorization to the request
+func (a *OAuth1Authorizer) Add(req *http.Request) {
+	a.config.Client(oauth1.NoContext, a.token).Transport.RoundTrip(req)
 }
 
 // Tweet represents a simplified tweet structure
@@ -136,7 +139,10 @@ func NewConfiguration() (*Configuration, error) {
 		return nil, fmt.Errorf("TWITTER_ACCESS_TOKEN environment variable is required")
 	}
 
-	// We no longer need TWITTER_ACCESS_SECRET for OAuth2 authentication
+	twitterAccessSecret := os.Getenv("TWITTER_ACCESS_SECRET")
+	if twitterAccessSecret == "" {
+		return nil, fmt.Errorf("TWITTER_ACCESS_SECRET environment variable is required")
+	}
 
 	twitterUsername := os.Getenv("TW_USER")
 	if twitterUsername == "" {
@@ -166,14 +172,15 @@ func NewConfiguration() (*Configuration, error) {
 	}
 
 	return &Configuration{
-		DynalistToken:      dynalistToken,
-		TwitterAPIKey:      twitterAPIKey,
-		TwitterAPISecret:   twitterAPISecret,
-		TwitterAccessToken: twitterAccessToken, // This is now the Bearer Token for OAuth2
-		TwitterUsername:    twitterUsername,
-		CacheFilePath:      cacheFilePath,
-		CheckInterval:      checkInterval,
-		LogLevel:           logLevel,
+		DynalistToken:       dynalistToken,
+		TwitterAPIKey:       twitterAPIKey,
+		TwitterAPISecret:    twitterAPISecret,
+		TwitterAccessToken:  twitterAccessToken,
+		TwitterAccessSecret: twitterAccessSecret,
+		TwitterUsername:     twitterUsername,
+		CacheFilePath:       cacheFilePath,
+		CheckInterval:       checkInterval,
+		LogLevel:            logLevel,
 	}, nil
 }
 
@@ -304,11 +311,16 @@ func (d *DynalistClient) AddToInbox(content, note string, logger *Logger) error 
 
 // NewTwitterClient creates a new Twitter API client
 func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, error) {
-	logger.Debug("Creating OAuth2 configuration")
+	logger.Debug("Creating OAuth1 configuration")
 
-	// Create OAuth2 authorizer using the bearer token (access token)
-	authorizer := &OAuth2Authorizer{
-		token: config.TwitterAccessToken,
+	// Create OAuth1 configuration
+	oauthConfig := oauth1.NewConfig(config.TwitterAPIKey, config.TwitterAPISecret)
+	token := oauth1.NewToken(config.TwitterAccessToken, config.TwitterAccessSecret)
+
+	// Create OAuth1 authorizer
+	authorizer := &OAuth1Authorizer{
+		config: oauthConfig,
+		token:  token,
 	}
 
 	logger.Debug("Creating Twitter v2 client")
