@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
+	twitterv2 "github.com/g8rswimmer/go-twitter/v2"
 )
 
 // Configuration holds all environment variables
@@ -51,8 +52,19 @@ type DynalistInboxRequest struct {
 
 // TwitterClient wraps the Twitter API client
 type TwitterClient struct {
-	client *twitter.Client
-	user   *twitter.User
+	client *twitterv2.Client
+	userID string
+}
+
+// OAuth1Authorizer implements the Authorizer interface for OAuth1
+type OAuth1Authorizer struct {
+	config *oauth1.Config
+	token  *oauth1.Token
+}
+
+// Add adds the OAuth1 authorization to the request
+func (a *OAuth1Authorizer) Add(req *http.Request) {
+	a.config.Client(oauth1.NoContext, a.token).Transport.RoundTrip(req)
 }
 
 // Tweet represents a simplified tweet structure
@@ -303,27 +315,42 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 	// Create OAuth1 configuration
 	oauthConfig := oauth1.NewConfig(config.TwitterAPIKey, config.TwitterAPISecret)
 	token := oauth1.NewToken(config.TwitterAccessToken, config.TwitterAccessSecret)
-	httpClient := oauthConfig.Client(oauth1.NoContext, token)
 
-	logger.Debug("Creating Twitter client")
-	client := twitter.NewClient(httpClient)
-
-	// Verify credentials
-	logger.Info("Verifying Twitter credentials")
-	user, _, err := client.Accounts.VerifyCredentials(&twitter.AccountVerifyParams{
-		IncludeEntities: twitter.Bool(false),
-		SkipStatus:      twitter.Bool(true),
-		IncludeEmail:    twitter.Bool(false),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify Twitter credentials: %v", err)
+	// Create OAuth1 authorizer
+	authorizer := &OAuth1Authorizer{
+		config: oauthConfig,
+		token:  token,
 	}
 
-	logger.Info("Authenticated as Twitter user: @%s", user.ScreenName)
+	logger.Debug("Creating Twitter v2 client")
+	client := &twitterv2.Client{
+		Authorizer: authorizer,
+		Client:     &http.Client{Timeout: 10 * time.Second},
+		Host:       "https://api.twitter.com",
+	}
+
+	// Get user ID from username
+	logger.Info("Looking up user ID for username: %s", config.TwitterUsername)
+	opts := twitterv2.UserLookupOpts{
+		UserFields: []twitterv2.UserField{twitterv2.UserFieldID, twitterv2.UserFieldName, twitterv2.UserFieldUserName},
+	}
+
+	ctx := context.Background()
+	userResponse, err := client.UserNameLookup(ctx, []string{config.TwitterUsername}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup Twitter user: %v", err)
+	}
+
+	if len(userResponse.Raw.Users) == 0 {
+		return nil, fmt.Errorf("user not found: %s", config.TwitterUsername)
+	}
+
+	userID := userResponse.Raw.Users[0].ID
+	logger.Info("Authenticated as Twitter user: @%s (ID: %s)", config.TwitterUsername, userID)
 
 	return &TwitterClient{
 		client: client,
-		user:   user,
+		userID: userID,
 	}, nil
 }
 
@@ -331,29 +358,62 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 func (t *TwitterClient) GetBookmarks(username string, logger *Logger) ([]Tweet, error) {
 	logger.Info("Fetching bookmarks for user: %s", username)
 
-	// First, get the user's favorites (likes/bookmarks)
-	logger.Debug("Fetching user favorites")
-	params := &twitter.FavoriteListParams{
-		ScreenName: username,
-		Count:      200, // Maximum allowed by Twitter API
+	// Use the Twitter API v2 bookmarks endpoint
+	logger.Debug("Fetching user bookmarks using v2 API")
+	opts := twitterv2.TweetBookmarksLookupOpts{
+		MaxResults: 100, // Maximum allowed by Twitter API v2
+		TweetFields: []twitterv2.TweetField{
+			twitterv2.TweetFieldID,
+			twitterv2.TweetFieldText,
+			twitterv2.TweetFieldAuthorID,
+			twitterv2.TweetFieldCreatedAt,
+		},
+		UserFields: []twitterv2.UserField{
+			twitterv2.UserFieldID,
+			twitterv2.UserFieldName,
+			twitterv2.UserFieldUserName,
+		},
+		Expansions: []twitterv2.Expansion{
+			twitterv2.ExpansionAuthorID,
+		},
 	}
 
-	favorites, _, err := t.client.Favorites.List(params)
+	ctx := context.Background()
+	bookmarksResponse, err := t.client.TweetBookmarksLookup(ctx, t.userID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get favorites: %v", err)
+		return nil, fmt.Errorf("failed to get bookmarks: %v", err)
 	}
 
-	logger.Info("Found %d favorites/bookmarks", len(favorites))
+	if bookmarksResponse.Raw == nil || len(bookmarksResponse.Raw.Tweets) == 0 {
+		logger.Info("No bookmarks found")
+		return []Tweet{}, nil
+	}
+
+	logger.Info("Found %d bookmarks", len(bookmarksResponse.Raw.Tweets))
+
+	// Create a map of author IDs to usernames
+	authorMap := make(map[string]string)
+	if bookmarksResponse.Raw.Includes != nil && len(bookmarksResponse.Raw.Includes.Users) > 0 {
+		for _, user := range bookmarksResponse.Raw.Includes.Users {
+			authorMap[user.ID] = user.UserName
+		}
+	}
 
 	var tweets []Tweet
-	for _, tweet := range favorites {
-		tweetURL := fmt.Sprintf("https://twitter.com/%s/status/%s", tweet.User.ScreenName, tweet.IDStr)
+	for _, tweet := range bookmarksResponse.Raw.Tweets {
+		// Get the username from the author map, or use "user" if not found
+		username := "user"
+		if authorUsername, ok := authorMap[tweet.AuthorID]; ok {
+			username = authorUsername
+		}
+
+		tweetURL := fmt.Sprintf("https://twitter.com/%s/status/%s", username, tweet.ID)
 		tweets = append(tweets, Tweet{
-			ID:   tweet.IDStr,
+			ID:   tweet.ID,
 			Text: tweet.Text,
 			URL:  tweetURL,
 		})
-		logger.Debug("Processed tweet: %s", tweet.IDStr)
+		logger.Debug("Processed tweet: %s", tweet.ID)
 	}
 
 	return tweets, nil
