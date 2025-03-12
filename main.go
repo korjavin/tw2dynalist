@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -114,22 +117,61 @@ func LoadToken(filePath string) (*oauth2.Token, error) {
 	return &token, nil
 }
 
-// GetAuthURL returns the URL to redirect the user to for OAuth2 authentication
-func GetAuthURL(config *oauth2.Config, state string) string {
-	// Ensure the redirect URL is properly set in the config
-	// This is a workaround for a potential URL encoding issue
-	authURL := config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+// GenerateCodeVerifier creates a code verifier for PKCE
+func GenerateCodeVerifier() (string, error) {
+	// Generate a random string of 32-64 characters
+	b := make([]byte, 32) // 32 bytes = 256 bits
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %v", err)
+	}
+
+	// Base64 URL encode the random bytes
+	verifier := base64.RawURLEncoding.EncodeToString(b)
+
+	// The code verifier should only contain alphanumeric characters, hyphens, underscores, periods, and tildes
+	// But base64 URL encoding already ensures this, so no additional cleaning is needed
+
+	return verifier, nil
+}
+
+// GenerateCodeChallenge creates a code challenge from a code verifier
+func GenerateCodeChallenge(verifier string) string {
+	// Create SHA256 hash of the verifier
+	hash := sha256.Sum256([]byte(verifier))
+
+	// Base64 URL encode the hash
+	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
+
+	return challenge
+}
+
+// GetAuthURL returns the URL to redirect the user to for OAuth2 authentication with PKCE
+func GetAuthURL(config *oauth2.Config, state string, codeChallenge string) string {
+	// Add PKCE parameters to the auth URL
+	opts := []oauth2.AuthCodeOption{
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
+		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+	}
+
+	authURL := config.AuthCodeURL(state, opts...)
 
 	// Log the raw URL for debugging
-	fmt.Printf("DEBUG: Raw auth URL: %s\n", authURL)
+	fmt.Printf("DEBUG: Raw auth URL with PKCE: %s\n", authURL)
 
 	return authURL
 }
 
-// ExchangeToken exchanges an authorization code for an OAuth2 token
-func ExchangeToken(config *oauth2.Config, code string) (*oauth2.Token, error) {
+// ExchangeToken exchanges an authorization code for an OAuth2 token with PKCE
+func ExchangeToken(config *oauth2.Config, code string, codeVerifier string) (*oauth2.Token, error) {
 	ctx := context.Background()
-	return config.Exchange(ctx, code)
+
+	// Add the code verifier to the token request
+	opts := []oauth2.AuthCodeOption{
+		oauth2.SetAuthURLParam("code_verifier", codeVerifier),
+	}
+
+	return config.Exchange(ctx, code, opts...)
 }
 
 // Tweet represents a simplified tweet structure
@@ -400,8 +442,19 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 	if _, err := os.Stat(config.TokenFilePath); os.IsNotExist(err) {
 		// No token file, need to get a new token
 		logger.Info("No token file found at %s", config.TokenFilePath)
+
+		// Generate code verifier and challenge for PKCE
+		logger.Debug("Generating PKCE code verifier and challenge")
+		codeVerifier, err := GenerateCodeVerifier()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate code verifier: %v", err)
+		}
+		codeChallenge := GenerateCodeChallenge(codeVerifier)
+		logger.Debug("Code verifier: %s", codeVerifier)
+		logger.Debug("Code challenge: %s", codeChallenge)
+
 		logger.Info("Please visit the following URL to authorize this application:")
-		authURL := GetAuthURL(oauth2Config, "state")
+		authURL := GetAuthURL(oauth2Config, "state", codeChallenge)
 		logger.Info("%s", authURL)
 
 		// Wait for the user to enter the authorization code
@@ -409,8 +462,8 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		var code string
 		fmt.Scanln(&code)
 
-		// Exchange the authorization code for a token
-		token, err = ExchangeToken(oauth2Config, code)
+		// Exchange the authorization code for a token using the code verifier
+		token, err = ExchangeToken(oauth2Config, code, codeVerifier)
 		if err != nil {
 			return nil, fmt.Errorf("failed to exchange token: %v", err)
 		}
