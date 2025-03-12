@@ -15,18 +15,20 @@ import (
 	"time"
 
 	twitterv2 "github.com/g8rswimmer/go-twitter/v2"
+	"golang.org/x/oauth2"
 )
 
 // Configuration holds all environment variables
 type Configuration struct {
-	DynalistToken      string
-	TwitterAPIKey      string
-	TwitterAPISecret   string
-	TwitterAccessToken string // This is now the Bearer Token for OAuth2
-	TwitterUsername    string
-	CacheFilePath      string
-	CheckInterval      time.Duration
-	LogLevel           string
+	DynalistToken       string
+	TwitterClientID     string
+	TwitterClientSecret string
+	TwitterRedirectURL  string
+	TwitterUsername     string
+	CacheFilePath       string
+	CheckInterval       time.Duration
+	LogLevel            string
+	TokenFilePath       string // Path to store the OAuth2 token
 }
 
 // Cache represents the structure to store processed tweets
@@ -54,14 +56,80 @@ type TwitterClient struct {
 	userID string
 }
 
-// BearerTokenAuthorizer implements the Authorizer interface for Bearer Token authentication
-type BearerTokenAuthorizer struct {
-	Token string
+// OAuth2Token represents an OAuth2 token
+type OAuth2Token struct {
+	AccessToken  string    `json:"access_token"`
+	TokenType    string    `json:"token_type"`
+	RefreshToken string    `json:"refresh_token"`
+	Expiry       time.Time `json:"expiry"`
 }
 
-// Add adds the Bearer Token authorization to the request
-func (a *BearerTokenAuthorizer) Add(req *http.Request) {
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", a.Token))
+// OAuth2Authorizer implements the Authorizer interface for OAuth2
+type OAuth2Authorizer struct {
+	token *oauth2.Token
+}
+
+// Add adds the OAuth2 authorization to the request
+func (a *OAuth2Authorizer) Add(req *http.Request) {
+	// Add the Authorization header with the access token
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.token.AccessToken))
+}
+
+// TokenSource is a source of OAuth2 tokens
+type TokenSource struct {
+	token *oauth2.Token
+}
+
+// Token returns the current token
+func (t *TokenSource) Token() (*oauth2.Token, error) {
+	return t.token, nil
+}
+
+// SaveToken saves the OAuth2 token to a file
+func SaveToken(filePath string, token *oauth2.Token) error {
+	data, err := json.MarshalIndent(token, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal token: %v", err)
+	}
+
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write token file: %v", err)
+	}
+
+	return nil
+}
+
+// LoadToken loads the OAuth2 token from a file
+func LoadToken(filePath string) (*oauth2.Token, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read token file: %v", err)
+	}
+
+	var token oauth2.Token
+	if err := json.Unmarshal(data, &token); err != nil {
+		return nil, fmt.Errorf("failed to parse token file: %v", err)
+	}
+
+	return &token, nil
+}
+
+// GetAuthURL returns the URL to redirect the user to for OAuth2 authentication
+func GetAuthURL(config *oauth2.Config, state string) string {
+	// Ensure the redirect URL is properly set in the config
+	// This is a workaround for a potential URL encoding issue
+	authURL := config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+
+	// Log the raw URL for debugging
+	fmt.Printf("DEBUG: Raw auth URL: %s\n", authURL)
+
+	return authURL
+}
+
+// ExchangeToken exchanges an authorization code for an OAuth2 token
+func ExchangeToken(config *oauth2.Config, code string) (*oauth2.Token, error) {
+	ctx := context.Background()
+	return config.Exchange(ctx, code)
 }
 
 // Tweet represents a simplified tweet structure
@@ -121,22 +189,20 @@ func NewConfiguration() (*Configuration, error) {
 		return nil, fmt.Errorf("DYNALIST_TOKEN environment variable is required")
 	}
 
-	twitterAPIKey := os.Getenv("TWITTER_API_KEY")
-	if twitterAPIKey == "" {
-		return nil, fmt.Errorf("TWITTER_API_KEY environment variable is required")
+	twitterClientID := os.Getenv("TWITTER_CLIENT_ID")
+	if twitterClientID == "" {
+		return nil, fmt.Errorf("TWITTER_CLIENT_ID environment variable is required")
 	}
 
-	twitterAPISecret := os.Getenv("TWITTER_API_SECRET")
-	if twitterAPISecret == "" {
-		return nil, fmt.Errorf("TWITTER_API_SECRET environment variable is required")
+	twitterClientSecret := os.Getenv("TWITTER_CLIENT_SECRET")
+	if twitterClientSecret == "" {
+		return nil, fmt.Errorf("TWITTER_CLIENT_SECRET environment variable is required")
 	}
 
-	twitterAccessToken := os.Getenv("TWITTER_ACCESS_TOKEN")
-	if twitterAccessToken == "" {
-		return nil, fmt.Errorf("TWITTER_ACCESS_TOKEN environment variable is required")
+	twitterRedirectURL := os.Getenv("TWITTER_REDIRECT_URL")
+	if twitterRedirectURL == "" {
+		return nil, fmt.Errorf("TWITTER_REDIRECT_URL environment variable is required")
 	}
-
-	// We no longer need TWITTER_ACCESS_SECRET for OAuth2 authentication
 
 	twitterUsername := os.Getenv("TW_USER")
 	if twitterUsername == "" {
@@ -146,6 +212,11 @@ func NewConfiguration() (*Configuration, error) {
 	cacheFilePath := os.Getenv("CACHE_FILE_PATH")
 	if cacheFilePath == "" {
 		cacheFilePath = "cache.json"
+	}
+
+	tokenFilePath := os.Getenv("TOKEN_FILE_PATH")
+	if tokenFilePath == "" {
+		tokenFilePath = "token.json"
 	}
 
 	checkIntervalStr := os.Getenv("CHECK_INTERVAL")
@@ -166,14 +237,15 @@ func NewConfiguration() (*Configuration, error) {
 	}
 
 	return &Configuration{
-		DynalistToken:      dynalistToken,
-		TwitterAPIKey:      twitterAPIKey,
-		TwitterAPISecret:   twitterAPISecret,
-		TwitterAccessToken: twitterAccessToken, // This is now the Bearer Token for OAuth2
-		TwitterUsername:    twitterUsername,
-		CacheFilePath:      cacheFilePath,
-		CheckInterval:      checkInterval,
-		LogLevel:           logLevel,
+		DynalistToken:       dynalistToken,
+		TwitterClientID:     twitterClientID,
+		TwitterClientSecret: twitterClientSecret,
+		TwitterRedirectURL:  twitterRedirectURL,
+		TwitterUsername:     twitterUsername,
+		CacheFilePath:       cacheFilePath,
+		TokenFilePath:       tokenFilePath,
+		CheckInterval:       checkInterval,
+		LogLevel:            logLevel,
 	}, nil
 }
 
@@ -304,11 +376,60 @@ func (d *DynalistClient) AddToInbox(content, note string, logger *Logger) error 
 
 // NewTwitterClient creates a new Twitter API client
 func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, error) {
-	logger.Debug("Creating Bearer Token authorizer")
+	logger.Debug("Creating OAuth2 configuration")
 
-	// Create Bearer Token authorizer
-	authorizer := &BearerTokenAuthorizer{
-		Token: config.TwitterAccessToken,
+	// Create OAuth2 configuration
+	oauth2Config := &oauth2.Config{
+		ClientID:     config.TwitterClientID,
+		ClientSecret: config.TwitterClientSecret,
+		RedirectURL:  config.TwitterRedirectURL,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://twitter.com/i/oauth2/authorize",
+			TokenURL: "https://api.twitter.com/2/oauth2/token",
+		},
+		Scopes: []string{"tweet.read", "users.read", "bookmark.read"},
+	}
+
+	// Log the redirect URL for debugging
+	logger.Debug("OAuth2 redirect URL: %s", config.TwitterRedirectURL)
+
+	// Check if we have a token file
+	var token *oauth2.Token
+	var err error
+
+	if _, err := os.Stat(config.TokenFilePath); os.IsNotExist(err) {
+		// No token file, need to get a new token
+		logger.Info("No token file found at %s", config.TokenFilePath)
+		logger.Info("Please visit the following URL to authorize this application:")
+		authURL := GetAuthURL(oauth2Config, "state")
+		logger.Info("%s", authURL)
+
+		// Wait for the user to enter the authorization code
+		logger.Info("Enter the authorization code: ")
+		var code string
+		fmt.Scanln(&code)
+
+		// Exchange the authorization code for a token
+		token, err = ExchangeToken(oauth2Config, code)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exchange token: %v", err)
+		}
+
+		// Save the token
+		if err := SaveToken(config.TokenFilePath, token); err != nil {
+			logger.Warn("Failed to save token: %v", err)
+		}
+	} else {
+		// Load the token from the file
+		token, err = LoadToken(config.TokenFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load token: %v", err)
+		}
+	}
+
+	// Create OAuth2 authorizer
+	authorizer := &OAuth2Authorizer{
+		token: token,
 	}
 
 	logger.Debug("Creating Twitter v2 client")
