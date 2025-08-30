@@ -10,6 +10,7 @@ COPY go.mod ./
 RUN go mod download
 
 # Copy the source code
+COPY cmd/ /app/cmd/
 COPY . .
 
 RUN ls -R
