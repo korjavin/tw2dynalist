@@ -19,6 +19,7 @@ services:
       - CACHE_FILE_PATH=/app/data/cache.json
       - REMOVE_BOOKMARKS=${REMOVE_BOOKMARKS:-false}
       - CLEANUP_PROCESSED_BOOKMARKS=${CLEANUP_PROCESSED_BOOKMARKS:-false}
+      - CALLBACK_PORT=${CALLBACK_PORT:-8080}
     volumes:
       - tw2dynalist_data:/app/data
     ports:
