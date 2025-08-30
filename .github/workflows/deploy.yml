@@ -54,9 +54,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Image Digest
-        run: echo "Image digest: ${{ steps.build-and-push.outputs.digest }}"
-
       - name: 📝 Update and commit docker-compose.yml
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
         run: |
