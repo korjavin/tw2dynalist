@@ -67,7 +67,6 @@ type OAuth2Token struct {
 	RefreshToken string    `json:"refresh_token"`
 	Expiry       time.Time `json:"expiry"`
 	UserID       string    `json:"user_id,omitempty"`
-	Username     string    `json:"username,omitempty"`
 }
 
 // OAuth2Authorizer implements the Authorizer interface for OAuth2
@@ -91,15 +90,14 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 	return t.token, nil
 }
 
-// SaveTokenWithUserInfo saves the OAuth2 token with user information to a file
-func SaveTokenWithUserInfo(filePath string, token *oauth2.Token, userID, username string) error {
+// SaveTokenWithUserInfo saves the OAuth2 token with user ID to a file
+func SaveTokenWithUserInfo(filePath string, token *oauth2.Token, userID string) error {
 	tokenData := OAuth2Token{
 		AccessToken:  token.AccessToken,
 		TokenType:    token.TokenType,
 		RefreshToken: token.RefreshToken,
 		Expiry:       token.Expiry,
 		UserID:       userID,
-		Username:     username,
 	}
 
 	data, err := json.MarshalIndent(tokenData, "", "  ")
@@ -116,20 +114,20 @@ func SaveTokenWithUserInfo(filePath string, token *oauth2.Token, userID, usernam
 
 // SaveToken saves the OAuth2 token to a file (without user info)
 func SaveToken(filePath string, token *oauth2.Token) error {
-	return SaveTokenWithUserInfo(filePath, token, "", "")
+	return SaveTokenWithUserInfo(filePath, token, "")
 }
 
-// LoadTokenWithUserInfo loads the OAuth2 token and user info from a file
-func LoadTokenWithUserInfo(filePath string) (*oauth2.Token, string, string, error) {
+// LoadTokenWithUserInfo loads the OAuth2 token and user ID from a file
+func LoadTokenWithUserInfo(filePath string) (*oauth2.Token, string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to read token file: %v", err)
+		return nil, "", fmt.Errorf("failed to read token file: %v", err)
 	}
 
-	// First try to parse as the new format with user info
+	// Parse the token data
 	var tokenData OAuth2Token
 	if err := json.Unmarshal(data, &tokenData); err != nil {
-		return nil, "", "", fmt.Errorf("failed to parse token file: %v", err)
+		return nil, "", fmt.Errorf("failed to parse token file: %v", err)
 	}
 
 	token := &oauth2.Token{
@@ -139,12 +137,12 @@ func LoadTokenWithUserInfo(filePath string) (*oauth2.Token, string, string, erro
 		Expiry:       tokenData.Expiry,
 	}
 
-	return token, tokenData.UserID, tokenData.Username, nil
+	return token, tokenData.UserID, nil
 }
 
 // LoadToken loads the OAuth2 token from a file (backward compatibility)
 func LoadToken(filePath string) (*oauth2.Token, error) {
-	token, _, _, err := LoadTokenWithUserInfo(filePath)
+	token, _, err := LoadTokenWithUserInfo(filePath)
 	return token, err
 }
 
@@ -390,9 +388,7 @@ func NewConfiguration() (*Configuration, error) {
 	}
 
 	twitterUsername := os.Getenv("TW_USER")
-	if twitterUsername == "" {
-		return nil, fmt.Errorf("TW_USER environment variable is required")
-	}
+	// TW_USER is now optional since we don't need it for the API calls
 
 	cacheFilePath := os.Getenv("CACHE_FILE_PATH")
 	if cacheFilePath == "" {
@@ -580,7 +576,7 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 
 	// Check if we have a token file
 	var token *oauth2.Token
-	var userID, username string
+	var userID string
 	var err error
 
 	if _, statErr := os.Stat(config.TokenFilePath); os.IsNotExist(statErr) {
@@ -648,11 +644,11 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		}
 	} else {
 		// Load the token from the file
-		token, userID, username, err = LoadTokenWithUserInfo(config.TokenFilePath)
+		token, userID, err = LoadTokenWithUserInfo(config.TokenFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load token: %v", err)
 		}
-		logger.Debug("Loaded token with userID: %s, username: %s", userID, username)
+		logger.Debug("Loaded token with userID: %s", userID)
 	}
 
 	// Create OAuth2 authorizer
@@ -667,26 +663,23 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		Host:       "https://api.twitter.com",
 	}
 
-	// Get user ID from username - only if not cached
-	if userID == "" || username == "" {
-		// For now, let's use a fallback approach since username lookup is failing
-		// This might be due to account changes or API limitations
-		logger.Warn("No cached user info found. Using fallback user info.")
+	// Get user ID - only if not cached
+	if userID == "" {
+		logger.Warn("No cached user ID found. Using fallback user ID.")
 		logger.Info("If you need to update user info, delete the token.json file and re-authenticate.")
 		
 		// Use the known user ID from previous successful authentication
-		// This is your actual Twitter user ID
+		// The bookmarks API requires a valid user ID
 		userID = "14850978"
-		username = config.TwitterUsername
 		
-		// Save the token with fallback user info
-		if err := SaveTokenWithUserInfo(config.TokenFilePath, token, userID, username); err != nil {
+		// Save the token with user ID
+		if err := SaveTokenWithUserInfo(config.TokenFilePath, token, userID); err != nil {
 			logger.Warn("Failed to save token with user info: %v", err)
 		}
 		
-		logger.Info("Using fallback user info for: %s", config.TwitterUsername)
+		logger.Info("Using fallback user ID: %s", userID)
 	} else {
-		logger.Info("Using cached Twitter user: @%s (ID: %s)", username, userID)
+		logger.Info("Using cached user ID: %s", userID)
 	}
 
 	return &TwitterClient{
@@ -695,9 +688,9 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 	}, nil
 }
 
-// GetBookmarks retrieves bookmarked tweets for a user
-func (t *TwitterClient) GetBookmarks(username string, logger *Logger) ([]Tweet, error) {
-	logger.Info("Fetching bookmarks for user: %s", username)
+// GetBookmarks retrieves bookmarked tweets for the authenticated user
+func (t *TwitterClient) GetBookmarks(logger *Logger) ([]Tweet, error) {
+	logger.Info("Fetching bookmarks for user ID: %s", t.userID)
 
 	// Use the Twitter API v2 bookmarks endpoint
 	logger.Debug("Fetching user bookmarks using v2 API")
@@ -832,7 +825,7 @@ func main() {
 // processBookmarks retrieves and processes bookmarked tweets
 func processBookmarks(twitterClient *TwitterClient, dynalistClient *DynalistClient, cache *Cache, config *Configuration, logger *Logger) error {
 	logger.Info("Starting to process bookmarks")
-	tweets, err := twitterClient.GetBookmarks(config.TwitterUsername, logger)
+	tweets, err := twitterClient.GetBookmarks(logger)
 	if err != nil {
 		return fmt.Errorf("failed to get bookmarks: %v", err)
 	}
