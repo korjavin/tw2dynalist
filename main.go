@@ -625,10 +625,14 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		logger.Debug("Code verifier: %s", codeVerifier)
 		logger.Debug("Code challenge: %s", codeChallenge)
 
-		// Extract port from redirect URL for callback server
-		port, err := ExtractPortFromURL(config.TwitterRedirectURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract port from redirect URL: %v", err)
+		// Use CALLBACK_PORT environment variable, fallback to extracting from redirect URL
+		port := os.Getenv("CALLBACK_PORT")
+		if port == "" {
+			var err error
+			port, err = ExtractPortFromURL(config.TwitterRedirectURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract port from redirect URL: %v", err)
+			}
 		}
 
 		// Start the callback server
