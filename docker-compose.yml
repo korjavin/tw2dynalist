@@ -5,6 +5,8 @@ services:
     image: ghcr.io/korjavin/tw2dynalist:latest
     container_name: tw2dynalist
     restart: unless-stopped
+    networks:
+      - tw2dynalist
     environment:
       - DYNALIST_TOKEN=${DYNALIST_TOKEN}
       - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
@@ -34,3 +36,7 @@ services:
       - "traefik.http.services.tw2dynalist.loadbalancer.server.port=8080"
       # Watchtower auto-update
       - "com.centurylinklabs.watchtower.enable=true"
+
+networks:
+  tw2dynalist:
+    external: true
