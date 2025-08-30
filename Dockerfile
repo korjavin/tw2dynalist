@@ -10,10 +10,7 @@ COPY go.mod ./
 RUN go mod download
 
 # Copy the source code
-COPY cmd/ /app/cmd/
 COPY . .
-
-RUN ls -R
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o tw2dynalist ./cmd/tw2dynalist
