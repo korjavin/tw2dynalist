@@ -665,19 +665,40 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		Host:       "https://api.twitter.com",
 	}
 
-	// For bookmarks API, we don't actually need the exact user ID
-	// The API can work with the authenticated user context
-	// Let's try using "me" or an empty string and see what happens
-	if userID == "" {
-		logger.Info("No cached user ID found. Will try to get bookmarks using authenticated user context.")
-		userID = "me" // Try using "me" as a placeholder for the authenticated user
+	// We need the actual user ID for the bookmarks API, so let's get it
+	if userID == "" || userID == "me" {
+		logger.Info("Need to lookup actual user ID for bookmarks API")
 		
-		// Save the token with placeholder user ID
+		// Create a simple request to get the current user's information
+		// We'll use a minimal request to avoid rate limits
+		userOpts := twitterv2.UserLookupOpts{
+			UserFields: []twitterv2.UserField{twitterv2.UserFieldID},
+		}
+		
+		// Try to get the authenticated user's information
+		// Since UserLookupMe doesn't exist, we'll need to use the authenticated user's username
+		cleanUsername := strings.TrimPrefix(config.TwitterUsername, "@")
+		logger.Debug("Looking up user ID for username: %s", cleanUsername)
+		
+		ctx := context.Background()
+		userResponse, err := client.UserNameLookup(ctx, []string{cleanUsername}, userOpts)
+		if err != nil {
+			logger.Warn("Failed to lookup user ID, using fallback: %v", err)
+			// As a last resort, we'll try without a user ID or return an error
+			return nil, fmt.Errorf("cannot get user ID for bookmarks API: %v", err)
+		}
+		
+		if userResponse.Raw == nil || len(userResponse.Raw.Users) == 0 || userResponse.Raw.Users[0] == nil {
+			return nil, fmt.Errorf("failed to get user information for bookmarks API")
+		}
+		
+		userID = userResponse.Raw.Users[0].ID
+		logger.Info("Successfully retrieved user ID: %s", userID)
+		
+		// Save the token with actual user ID
 		if err := SaveTokenWithUserInfo(config.TokenFilePath, token, userID); err != nil {
 			logger.Warn("Failed to save token with user info: %v", err)
 		}
-		
-		logger.Info("Using authenticated user context for bookmarks")
 	} else {
 		logger.Info("Using cached user ID: %s", userID)
 	}
