@@ -30,6 +30,7 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | `CHECK_INTERVAL` | Interval to check for new bookmarks | No | `1h` |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARN, ERROR) | No | `INFO` |
 | `REMOVE_BOOKMARKS` | Remove bookmarks after saving to Dynalist | No | `false` |
+| `CLEANUP_PROCESSED_BOOKMARKS` | One-time cleanup of already processed bookmarks | No | `false` |
 
 ## Getting Twitter API Credentials
 
@@ -172,6 +173,32 @@ TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
    - No need to expose ports when using Traefik
 
 **Note**: When using Traefik, the callback server will be accessible via HTTPS on your domain, providing secure OAuth authentication.
+
+## Bookmark Management
+
+The application provides two options for managing your Twitter bookmarks:
+
+### 1. **Remove New Bookmarks** (`REMOVE_BOOKMARKS=true`)
+- Automatically removes bookmarks from Twitter after successfully saving them to Dynalist
+- Only affects newly processed tweets
+- Keeps your bookmarks clean going forward
+
+### 2. **One-time Cleanup** (`CLEANUP_PROCESSED_BOOKMARKS=true`)
+- Removes ALL bookmarks that have been previously processed (exist in cache)
+- Useful for cleaning up bookmarks from previous runs where removal wasn't enabled
+- Runs once on startup, then continues with normal processing
+- Combines well with `REMOVE_BOOKMARKS=true` for complete bookmark management
+
+**Example usage:**
+```bash
+# Clean up old bookmarks and enable removal for new ones
+CLEANUP_PROCESSED_BOOKMARKS=true REMOVE_BOOKMARKS=true [other vars...] go run .
+```
+
+**Safety features:**
+- Bookmark removal failures don't stop the sync process
+- Already processed tweets are preserved in cache even if bookmark removal fails
+- 500ms delay between removals to respect API rate limits
 
 ## Automated Deployment with Portainer
 

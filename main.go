@@ -32,8 +32,9 @@ type Configuration struct {
 	CacheFilePath       string
 	CheckInterval       time.Duration
 	LogLevel            string
-	TokenFilePath       string // Path to store the OAuth2 token
-	RemoveBookmarks     bool   // Whether to remove bookmarks after successful Dynalist save
+	TokenFilePath           string // Path to store the OAuth2 token
+	RemoveBookmarks         bool   // Whether to remove bookmarks after successful Dynalist save
+	CleanupProcessedBookmarks bool   // Whether to remove all previously processed bookmarks on startup
 }
 
 // Cache represents the structure to store processed tweets
@@ -423,17 +424,21 @@ func NewConfiguration() (*Configuration, error) {
 	removeBookmarksStr := os.Getenv("REMOVE_BOOKMARKS")
 	removeBookmarks := removeBookmarksStr == "true"
 
+	cleanupProcessedBookmarksStr := os.Getenv("CLEANUP_PROCESSED_BOOKMARKS")
+	cleanupProcessedBookmarks := cleanupProcessedBookmarksStr == "true"
+
 	return &Configuration{
-		DynalistToken:       dynalistToken,
-		TwitterClientID:     twitterClientID,
-		TwitterClientSecret: twitterClientSecret,
-		TwitterRedirectURL:  twitterRedirectURL,
-		TwitterUsername:     twitterUsername,
-		CacheFilePath:       cacheFilePath,
-		TokenFilePath:       tokenFilePath,
-		CheckInterval:       checkInterval,
-		LogLevel:            logLevel,
-		RemoveBookmarks:     removeBookmarks,
+		DynalistToken:             dynalistToken,
+		TwitterClientID:           twitterClientID,
+		TwitterClientSecret:       twitterClientSecret,
+		TwitterRedirectURL:        twitterRedirectURL,
+		TwitterUsername:           twitterUsername,
+		CacheFilePath:             cacheFilePath,
+		TokenFilePath:             tokenFilePath,
+		CheckInterval:             checkInterval,
+		LogLevel:                  logLevel,
+		RemoveBookmarks:           removeBookmarks,
+		CleanupProcessedBookmarks: cleanupProcessedBookmarks,
 	}, nil
 }
 
@@ -859,6 +864,55 @@ func (t *TwitterClient) RemoveBookmark(tweetID string, logger *Logger) error {
 	return fmt.Errorf("failed to remove bookmark (HTTP %d): %s", resp.StatusCode, string(body))
 }
 
+// CleanupProcessedBookmarks removes all bookmarks that have already been processed
+func (t *TwitterClient) CleanupProcessedBookmarks(cache *Cache, logger *Logger) error {
+	logger.Info("Starting cleanup of processed bookmarks")
+	
+	// Get all current bookmarks
+	tweets, err := t.GetBookmarks(logger)
+	if err != nil {
+		return fmt.Errorf("failed to get bookmarks for cleanup: %v", err)
+	}
+	
+	if len(tweets) == 0 {
+		logger.Info("No bookmarks found for cleanup")
+		return nil
+	}
+	
+	logger.Info("Found %d bookmarks, checking which ones have been processed", len(tweets))
+	
+	var removed int
+	var failed int
+	
+	for _, tweet := range tweets {
+		if cache.IsProcessed(tweet.ID) {
+			logger.Debug("Tweet %s was already processed, removing from bookmarks", tweet.ID)
+			
+			if err := t.RemoveBookmark(tweet.ID, logger); err != nil {
+				logger.Warn("Failed to remove processed bookmark %s: %v", tweet.ID, err)
+				failed++
+				continue
+			}
+			
+			logger.Info("Removed processed bookmark: %s", tweet.ID)
+			removed++
+			
+			// Add a pause between removals to avoid rate limiting
+			time.Sleep(500 * time.Millisecond)
+		} else {
+			logger.Debug("Tweet %s has not been processed yet, keeping bookmark", tweet.ID)
+		}
+	}
+	
+	logger.Info("Cleanup complete. Removed %d processed bookmarks, failed: %d", removed, failed)
+	
+	if failed > 0 {
+		return fmt.Errorf("cleanup completed with %d failures", failed)
+	}
+	
+	return nil
+}
+
 func main() {
 	// Set up logging
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
@@ -889,6 +943,21 @@ func main() {
 	twitterClient, err := NewTwitterClient(config, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize Twitter client: %v", err)
+	}
+
+	// Cleanup processed bookmarks if requested
+	if config.CleanupProcessedBookmarks {
+		logger.Info("Cleanup mode enabled - removing already processed bookmarks")
+		if err := twitterClient.CleanupProcessedBookmarks(cache, logger); err != nil {
+			logger.Error("Cleanup failed: %v", err)
+		} else {
+			logger.Info("Cleanup completed successfully")
+		}
+		
+		// Save cache after cleanup in case any changes were made
+		if err := cache.SaveCache(config.CacheFilePath, logger); err != nil {
+			logger.Error("Error saving cache after cleanup: %v", err)
+		}
 	}
 
 	// Process bookmarks initially
