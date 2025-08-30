@@ -549,8 +549,28 @@ func (d *DynalistClient) AddToInbox(content, note string, logger *Logger) error 
 		return fmt.Errorf("failed to parse response: %v", err)
 	}
 
+	logger.Debug("Dynalist API response: %v", result)
+
 	if result["_code"] != "Ok" {
-		return fmt.Errorf("dynalist API error: %v", result)
+		code := result["_code"]
+		msg := result["_msg"]
+		
+		// Handle specific error codes
+		switch code {
+		case "TooManyRequests":
+			logger.Warn("Dynalist rate limit hit, pausing for 2 seconds")
+			time.Sleep(2 * time.Second)
+			return fmt.Errorf("dynalist rate limit: %s", msg)
+		case "InvalidToken":
+			logger.Error("Dynalist token is invalid: %s", msg)
+			return fmt.Errorf("dynalist invalid token: %s", msg)
+		case "Unauthorized":
+			logger.Error("Dynalist unauthorized: %s", msg)
+			return fmt.Errorf("dynalist unauthorized: %s", msg)
+		default:
+			logger.Error("Dynalist API error [%s]: %s", code, msg)
+			return fmt.Errorf("dynalist API error [%s]: %s", code, msg)
+		}
 	}
 
 	logger.Debug("Successfully added item to Dynalist inbox")
@@ -740,6 +760,14 @@ func (t *TwitterClient) GetBookmarks(logger *Logger) ([]Tweet, error) {
 	bookmarksResponse, err := t.client.TweetBookmarksLookup(ctx, t.userID, opts)
 	if err != nil {
 		logger.Error("TweetBookmarksLookup failed: %v", err)
+		
+		// Check if it's a rate limit error
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "Too Many Requests") {
+			logger.Warn("Twitter API rate limit hit on bookmarks endpoint. This is likely due to frequent testing.")
+			logger.Info("The app will continue running and retry on the next check cycle (every %v)", time.Duration(10)*time.Minute)
+			return []Tweet{}, nil // Return empty list instead of failing
+		}
+		
 		return nil, fmt.Errorf("failed to get bookmarks: %v", err)
 	}
 	
@@ -878,8 +906,31 @@ func processBookmarks(twitterClient *TwitterClient, dynalistClient *DynalistClie
 		content := fmt.Sprintf("Tweet: %s", tweet.Text)
 		note := fmt.Sprintf("URL: %s", tweet.URL)
 
-		if err := dynalistClient.AddToInbox(content, note, logger); err != nil {
-			logger.Error("Error adding tweet %s to Dynalist: %v", tweet.ID, err)
+		// Retry logic for rate limiting
+		maxRetries := 3
+		var err error
+		for retry := 0; retry < maxRetries; retry++ {
+			err = dynalistClient.AddToInbox(content, note, logger)
+			if err == nil {
+				break
+			}
+			
+			// Check if it's a rate limit error and retry
+			if strings.Contains(err.Error(), "rate limit") && retry < maxRetries-1 {
+				logger.Warn("Rate limited on tweet %s, retrying in %d seconds (attempt %d/%d)", 
+					tweet.ID, (retry+1)*2, retry+1, maxRetries)
+				time.Sleep(time.Duration((retry+1)*2) * time.Second)
+				continue
+			}
+			
+			// If it's not a rate limit error, don't retry
+			if !strings.Contains(err.Error(), "rate limit") {
+				break
+			}
+		}
+		
+		if err != nil {
+			logger.Error("Error adding tweet %s to Dynalist after %d attempts: %v", tweet.ID, maxRetries, err)
 			failed++
 			continue
 		}
@@ -888,6 +939,9 @@ func processBookmarks(twitterClient *TwitterClient, dynalistClient *DynalistClie
 		cache.MarkProcessed(tweet.ID)
 		logger.Info("Successfully added tweet %s to Dynalist", tweet.ID)
 		processed++
+		
+		// Add a small pause to avoid rate limiting
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	logger.Info("Bookmark processing complete. Processed: %d, Skipped: %d, Failed: %d", processed, skipped, failed)
