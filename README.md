@@ -276,6 +276,14 @@ export TOKEN_FILE_PATH=token.json
 ./tw2dynalist
 ```
 
+## Running Tests
+
+To run the unit tests for all packages, use the following command:
+
+```bash
+go test ./...
+```
+
 ## Docker Image
 
 The Docker image is automatically built and published to GitHub Container Registry (ghcr.io) on every commit to the master branch.
