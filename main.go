@@ -33,6 +33,7 @@ type Configuration struct {
 	CheckInterval       time.Duration
 	LogLevel            string
 	TokenFilePath       string // Path to store the OAuth2 token
+	RemoveBookmarks     bool   // Whether to remove bookmarks after successful Dynalist save
 }
 
 // Cache represents the structure to store processed tweets
@@ -419,6 +420,9 @@ func NewConfiguration() (*Configuration, error) {
 		logLevel = "INFO"
 	}
 
+	removeBookmarksStr := os.Getenv("REMOVE_BOOKMARKS")
+	removeBookmarks := removeBookmarksStr == "true"
+
 	return &Configuration{
 		DynalistToken:       dynalistToken,
 		TwitterClientID:     twitterClientID,
@@ -429,6 +433,7 @@ func NewConfiguration() (*Configuration, error) {
 		TokenFilePath:       tokenFilePath,
 		CheckInterval:       checkInterval,
 		LogLevel:            logLevel,
+		RemoveBookmarks:     removeBookmarks,
 	}, nil
 }
 
@@ -808,6 +813,52 @@ func (t *TwitterClient) GetBookmarks(logger *Logger) ([]Tweet, error) {
 	return tweets, nil
 }
 
+// RemoveBookmark removes a tweet from bookmarks using direct HTTP call
+func (t *TwitterClient) RemoveBookmark(tweetID string, logger *Logger) error {
+	logger.Debug("Attempting to remove bookmark for tweet ID: %s", tweetID)
+	
+	// Use direct HTTP call to Twitter API v2 DELETE /2/users/:id/bookmarks/:tweet_id
+	url := fmt.Sprintf("https://api.twitter.com/2/users/%s/bookmarks/%s", t.userID, tweetID)
+	
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create remove bookmark request: %v", err)
+	}
+	
+	// Add authorization header using the same token as the client
+	// We need to get the token from the client's authorizer
+	if authorizer, ok := t.client.Authorizer.(*OAuth2Authorizer); ok {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authorizer.token.AccessToken))
+	} else {
+		return fmt.Errorf("unable to get authorization token for bookmark removal")
+	}
+	
+	req.Header.Set("Content-Type", "application/json")
+	
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send remove bookmark request: %v", err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode == 200 || resp.StatusCode == 204 {
+		logger.Debug("Successfully removed bookmark for tweet %s", tweetID)
+		return nil
+	}
+	
+	// Read response body for error details
+	body, _ := io.ReadAll(resp.Body)
+	logger.Debug("Remove bookmark response: %s", string(body))
+	
+	if resp.StatusCode == 404 {
+		logger.Debug("Bookmark for tweet %s was not found (already removed or never bookmarked)", tweetID)
+		return nil // Consider this a success
+	}
+	
+	return fmt.Errorf("failed to remove bookmark (HTTP %d): %s", resp.StatusCode, string(body))
+}
+
 func main() {
 	// Set up logging
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
@@ -939,6 +990,16 @@ func processBookmarks(twitterClient *TwitterClient, dynalistClient *DynalistClie
 		cache.MarkProcessed(tweet.ID)
 		logger.Info("Successfully added tweet %s to Dynalist", tweet.ID)
 		processed++
+		
+		// Remove bookmark if configured to do so
+		if config.RemoveBookmarks {
+			if err := twitterClient.RemoveBookmark(tweet.ID, logger); err != nil {
+				logger.Warn("Failed to remove bookmark for tweet %s: %v", tweet.ID, err)
+				// Don't fail the whole process if bookmark removal fails
+			} else {
+				logger.Info("Removed bookmark for tweet %s", tweet.ID)
+			}
+		}
 		
 		// Add a small pause to avoid rate limiting
 		time.Sleep(200 * time.Millisecond)

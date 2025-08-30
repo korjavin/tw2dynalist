@@ -29,6 +29,7 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | `TOKEN_FILE_PATH` | Path to OAuth token storage file | No | `token.json` |
 | `CHECK_INTERVAL` | Interval to check for new bookmarks | No | `1h` |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARN, ERROR) | No | `INFO` |
+| `REMOVE_BOOKMARKS` | Remove bookmarks after saving to Dynalist | No | `false` |
 
 ## Getting Twitter API Credentials
 
