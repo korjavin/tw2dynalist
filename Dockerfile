@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o tw2dynalist .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o tw2dynalist ./cmd/tw2dynalist
 
 # Stage 2: Create a minimal runtime image
 FROM alpine:latest

@@ -256,6 +256,21 @@ docker run -d \
   ghcr.io/korjavin/tw2dynalist:latest
 ```
 
+## Project Structure
+
+The project is organized into the following main directories:
+
+-   `cmd/tw2dynalist`: The main application entrypoint.
+-   `internal`: Contains the core application logic, separated into packages by concern:
+    -   `app`: Application orchestration and wiring.
+    -   `auth`: OAuth2 and PKCE authentication logic.
+    -   `config`: Configuration loading and management.
+    -   `dynalist`: Client for the Dynalist API.
+    -   `logger`: Simple logging wrapper.
+    -   `scheduler`: Task scheduling.
+    -   `storage`: File-based cache storage.
+    -   `twitter`: Client for the Twitter API.
+
 ## Building from Source
 
 ```bash
@@ -264,7 +279,7 @@ git clone https://github.com/korjavin/tw2dynalist.git
 cd tw2dynalist
 
 # Build the binary
-go build -o tw2dynalist
+go build -o tw2dynalist ./cmd/tw2dynalist
 
 # Run the bot
 export DYNALIST_TOKEN=your_dynalist_token
@@ -274,6 +289,14 @@ export TWITTER_REDIRECT_URL=your_twitter_redirect_url
 export TW_USER=your_twitter_username
 export TOKEN_FILE_PATH=token.json
 ./tw2dynalist
+```
+
+## Running Tests
+
+To run the unit tests for all packages, use the following command:
+
+```bash
+go test ./...
 ```
 
 ## Docker Image
