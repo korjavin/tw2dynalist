@@ -18,8 +18,10 @@ tw2dynalist
 # Go workspace file
 go.work
 
-# Cache file
+# Runtime data
 cache.json
+token.json
+data/
 
 # Environment variables file
 .env
@@ -29,4 +31,7 @@ cache.json
 .vscode/
 *.swp
 *.swo
-token.json
+
+# OS files
+.DS_Store
+Thumbs.db

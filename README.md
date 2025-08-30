@@ -172,6 +172,41 @@ TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
 
 **Note**: When using Traefik, the callback server will be accessible via HTTPS on your domain, providing secure OAuth authentication.
 
+## Automated Deployment with Portainer
+
+This repository includes GitHub Actions for automated building and deployment:
+
+### CI/CD Pipeline Features:
+- **Multi-architecture builds**: Supports both `linux/amd64` and `linux/arm64`
+- **Automatic tagging**: Uses commit SHA and latest tags
+- **Deploy branch**: Updates `docker-compose.yml` with specific image tags
+- **Portainer integration**: Triggers webhook for automatic redeployment
+
+### Setup for Automated Deployment:
+
+1. **Configure GitHub Secrets** in your repository settings:
+   ```
+   PORTAINER_WEBHOOK_URL=https://your-portainer-instance.com/api/webhooks/your-webhook-id
+   PORTAINER_WEBHOOK_SECRET=your-webhook-secret (optional)
+   ```
+
+2. **Create Portainer Stack**:
+   - Use the `deploy` branch for your Portainer stack
+   - Set Git repository to: `https://github.com/your-username/tw2dynalist.git`
+   - Set branch to: `deploy`
+   - Enable automatic updates via webhook
+
+3. **Workflow Triggers**:
+   - **Push to master/main**: Builds, pushes image, updates deploy branch, triggers Portainer
+   - **Pull Requests**: Builds and tests without deployment
+
+### Manual Deployment:
+```bash
+# Deploy latest from deploy branch
+git checkout deploy
+docker-compose pull && docker-compose up -d
+```
+
 ## Running with Docker (Manual)
 
 ```bash
