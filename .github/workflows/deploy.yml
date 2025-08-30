@@ -37,10 +37,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
 
       - name: 🔨 Build and push Docker image
         id: build-and-push
@@ -64,12 +62,12 @@ jobs:
           # Create and switch to deploy branch (or switch if it exists)
           git checkout -B deploy
           
-          # Update the image tag in docker-compose.yml to use the commit SHA
-          sed -i "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:${{ github.sha }}|g" docker-compose.yml
+          # Update the image tag in docker-compose.yml to use the commit SHA (first 7 chars)
+          sed -i "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:sha-${GITHUB_SHA:0:7}|g" docker-compose.yml
           
           # Add the changed file, commit it, and push it to the 'deploy' branch
           git add docker-compose.yml
-          git commit -m "ci: Update image tag to ${{ github.sha }}"
+          git commit -m "ci: Update image tag to sha-${GITHUB_SHA:0:7}"
           git push origin deploy --force
 
       - name: 🚀 Trigger Portainer Redeploy Webhook
@@ -83,5 +81,5 @@ jobs:
               "repository": "${{ github.repository }}",
               "commit": "${{ github.sha }}",
               "branch": "${{ github.ref_name }}",
-              "image": "ghcr.io/${{ github.repository }}:${{ github.sha }}"
+              "image": "ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
             }
