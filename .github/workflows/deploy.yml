@@ -21,6 +21,9 @@ jobs:
       - name: 📦 Checkout repository
         uses: actions/checkout@v4
 
+      - name: 🌳 List files in repository
+        run: ls -R
+
       - name:  সেট up Go
         uses: actions/setup-go@v5
         with:
