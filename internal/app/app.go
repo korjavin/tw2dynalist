@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
+	
 	"os"
 	"os/signal"
 	"sync"
@@ -78,11 +78,7 @@ func (a *App) Run() {
 	a.Mux.HandleFunc("/", a.handleDashboard)
 	a.Mux.HandleFunc("/api/metrics", a.handleMetrics)
 
-	port, err := extractPortFromURL(a.Config.TwitterRedirectURL)
-	if err != nil {
-		a.Logger.Fatal("Failed to extract port from redirect URL: %v", err)
-	}
-
+	port := a.Config.CallbackPort
 	server := &http.Server{
 		Addr:    ":" + port,
 		Handler: a.Mux,
@@ -293,18 +289,4 @@ func formatOptionalTime(t *time.Time, defaultStr string) string {
 	return t.Format(time.RFC1123)
 }
 
-func extractPortFromURL(redirectURL string) (string, error) {
-	parsedURL, err := url.Parse(redirectURL)
-	if err != nil {
-		return "", fmt.Errorf("invalid redirect URL: %v", err)
-	}
-	port := parsedURL.Port()
-	if port == "" {
-		if parsedURL.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "8080"
-		}
-	}
-	return port, nil
-}
+
