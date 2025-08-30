@@ -25,12 +25,17 @@ WORKDIR /app
 # Copy the binary from the builder stage
 COPY --from=builder /app/tw2dynalist .
 
-# Create a directory for the cache
-RUN mkdir -p /app/cache
+# Create directories for data storage
+RUN mkdir -p /app/data
 
-# Set the cache file path
-ENV CACHE_FILE_PATH=/app/cache/cache.json
+# Set default environment variables
+ENV CACHE_FILE_PATH=/app/data/cache.json
+ENV TOKEN_FILE_PATH=/app/data/token.json
 ENV LOG_LEVEL=INFO
+ENV TWITTER_REDIRECT_URL=http://localhost:8080/callback
+
+# Expose the callback server port
+EXPOSE 8080
 
 # Run the application
 CMD ["./tw2dynalist"]

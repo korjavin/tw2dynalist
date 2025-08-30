@@ -12,7 +12,7 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 
 ## Prerequisites
 
-- Twitter API credentials (API key, API secret, Access token, Access secret)
+- Twitter OAuth 2.0 app credentials (Client ID, Client Secret)
 - Dynalist API token
 - Docker (for containerized deployment)
 
@@ -21,12 +21,12 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
 | `DYNALIST_TOKEN` | Your Dynalist API token | Yes | - |
-| `TWITTER_API_KEY` | Twitter API key | Yes | - |
-| `TWITTER_API_SECRET` | Twitter API secret | Yes | - |
-| `TWITTER_ACCESS_TOKEN` | Twitter Access token | Yes | - |
-| `TWITTER_ACCESS_SECRET` | Twitter Access secret | Yes | - |
+| `TWITTER_CLIENT_ID` | Twitter OAuth 2.0 Client ID | Yes | - |
+| `TWITTER_CLIENT_SECRET` | Twitter OAuth 2.0 Client Secret | Yes | - |
+| `TWITTER_REDIRECT_URL` | OAuth callback URL (e.g., http://localhost:8080/callback) | Yes | - |
 | `TW_USER` | Twitter username to monitor | Yes | - |
 | `CACHE_FILE_PATH` | Path to cache file | No | `cache.json` |
+| `TOKEN_FILE_PATH` | Path to OAuth token storage file | No | `token.json` |
 | `CHECK_INTERVAL` | Interval to check for new bookmarks | No | `1h` |
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARN, ERROR) | No | `INFO` |
 
@@ -51,8 +51,8 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 4. Configure OAuth 2.0 settings:
    - In your app settings, navigate to the "User authentication settings" section
    - Enable OAuth 2.0
-   - Set the callback URL (e.g., http://localhost:8080/callback)
-   - Select the required scopes: tweet.read, users.read, bookmark.read
+   - Set the callback URL to `http://localhost:8080/callback` (or your preferred port)
+   - Select the required scopes: `tweet.read`, `users.read`, `bookmark.read`
    - Save your changes
 
 5. Get your OAuth 2.0 credentials:
@@ -60,10 +60,34 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
    - You'll find your Client ID and Client Secret under "OAuth 2.0 Client ID and Client Secret"
    - Make sure to save these values as they will be needed to configure the bot
 
-6. Additional requirements:
-   - Ensure your Twitter account has the necessary permissions to access the API
-   - For production use, you may need to apply for Elevated access to the Twitter API
-   - The app uses Twitter API v2 endpoints with OAuth 2.0 User Context authentication
+## OAuth 2.0 Authorization Flow
+
+This application uses OAuth 2.0 with PKCE (Proof Key for Code Exchange) for secure authentication:
+
+1. **First Run**: When you run the app for the first time, it will:
+   - Start a local callback server (default: http://localhost:8080/callback)
+   - Generate a secure authorization URL
+   - Display the URL for you to visit in your browser
+
+2. **Browser Authorization**: 
+   - Visit the provided URL in your browser
+   - Authorize the application with your Twitter account
+   - Twitter will redirect back to the callback server automatically
+
+3. **Token Storage**: 
+   - The app receives the authorization code via the callback
+   - Exchanges it for an access token automatically
+   - Stores the token and user info in `token.json` for future use
+
+4. **Subsequent Runs**: 
+   - Uses the stored token without requiring re-authorization
+   - Automatically refreshes tokens when needed
+
+## Additional Requirements
+
+- Ensure your Twitter account has the necessary permissions to access the API
+- For production use, you may need to apply for Elevated access to the Twitter API
+- The app uses Twitter API v2 endpoints with OAuth 2.0 User Context authentication
 
 ## Getting Dynalist API Token
 
@@ -71,7 +95,84 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 2. Go to Settings > Developer
 3. Copy your API token
 
-## Running with Docker
+## Running with Docker Compose (Recommended)
+
+1. Clone the repository:
+```bash
+git clone https://github.com/korjavin/tw2dynalist.git
+cd tw2dynalist
+```
+
+2. Create environment file:
+```bash
+cp .env.example .env
+```
+
+3. Edit `.env` file with your credentials:
+```bash
+# Required
+DYNALIST_TOKEN=your_dynalist_api_token_here
+TWITTER_CLIENT_ID=your_twitter_client_id_here
+TWITTER_CLIENT_SECRET=your_twitter_client_secret_here
+TW_USER=your_twitter_username_here
+
+# Optional
+TWITTER_REDIRECT_URL=http://localhost:8080/callback
+LOG_LEVEL=INFO
+CHECK_INTERVAL=1h
+CALLBACK_PORT=8080
+```
+
+4. Start the service:
+```bash
+docker-compose up -d
+```
+
+5. **First-time OAuth setup**: 
+   - Check logs: `docker-compose logs -f tw2dynalist`
+   - Visit the OAuth URL shown in the logs to authorize the app
+   - The app will automatically receive the callback and start running
+
+6. Manage the service:
+```bash
+# View logs
+docker-compose logs -f tw2dynalist
+
+# Stop service
+docker-compose down
+
+# Restart service
+docker-compose restart tw2dynalist
+
+# Update to latest version
+docker-compose pull && docker-compose up -d
+```
+
+## Domain-based Deployment with Traefik
+
+For production deployments with a custom domain and HTTPS:
+
+1. **Configure environment variables**:
+```bash
+# Enable Traefik integration
+TRAEFIK_ENABLE=true
+TW2DYNALIST_DOMAIN=tw2dynalist.yourdomain.com
+
+# Update callback URL to use your domain
+TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
+```
+
+2. **Update Twitter App Settings**:
+   - In your Twitter Developer Portal, update the OAuth callback URL to: `https://tw2dynalist.yourdomain.com/callback`
+
+3. **Deploy with Traefik**:
+   - Ensure you have Traefik running with SSL certificate resolver
+   - The compose file includes labels for automatic HTTPS setup
+   - No need to expose ports when using Traefik
+
+**Note**: When using Traefik, the callback server will be accessible via HTTPS on your domain, providing secure OAuth authentication.
+
+## Running with Docker (Manual)
 
 ```bash
 docker run -d \
@@ -79,12 +180,13 @@ docker run -d \
   -e DYNALIST_TOKEN=your_dynalist_token \
   -e TWITTER_CLIENT_ID=your_twitter_client_id \
   -e TWITTER_CLIENT_SECRET=your_twitter_client_secret \
-  -e TWITTER_REDIRECT_URL=your_twitter_redirect_url \
+  -e TWITTER_REDIRECT_URL=http://localhost:8080/callback \
   -e TW_USER=your_twitter_username \
   -e LOG_LEVEL=INFO \
-  -e TOKEN_FILE_PATH=/app/token.json \
-  -v /path/to/cache:/app/cache \
-  -v /path/to/token:/app/token.json \
+  -e TOKEN_FILE_PATH=/app/data/token.json \
+  -e CACHE_FILE_PATH=/app/data/cache.json \
+  -p 8080:8080 \
+  -v ./data:/app/data \
   ghcr.io/korjavin/tw2dynalist:latest
 ```
 
@@ -149,11 +251,13 @@ export LOG_LEVEL=DEBUG
 
 4. **API Version Issues**: This app uses Twitter API v2 endpoints. If you encounter any issues related to API endpoints, ensure your Twitter Developer account has access to the v2 API.
 
-5. **OAuth 2.0 Flow Issues**:
-   - If you're having trouble with the OAuth 2.0 flow, make sure your callback URL is correctly set in the Twitter Developer Portal.
-   - The authorization code must be entered exactly as provided in the callback URL.
-   - If you need to re-authorize, simply delete the token.json file and run the app again.
-4. **API Version Issues**: This app now uses Twitter API v2 endpoints. If you encounter any issues related to API endpoints, ensure your Twitter Developer account has access to the v2 API.
+4. **OAuth 2.0 Flow Issues**:
+   - If you're having trouble with the OAuth 2.0 flow, make sure your callback URL is correctly set in the Twitter Developer Portal and matches your `TWITTER_REDIRECT_URL` environment variable.
+   - The app automatically handles the callback - you don't need to manually enter codes anymore.
+   - If you need to re-authorize, simply delete the `token.json` file and run the app again.
+   - Ensure the callback server port (default: 8080) is not blocked by firewalls.
+
+5. **API Version Issues**: This app uses Twitter API v2 endpoints. If you encounter any issues related to API endpoints, ensure your Twitter Developer account has access to the v2 API.
 
 ## License
 

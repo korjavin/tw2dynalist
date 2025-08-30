@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  tw2dynalist:
+    image: ghcr.io/korjavin/tw2dynalist:latest
+    container_name: tw2dynalist
+    restart: unless-stopped
+    environment:
+      - DYNALIST_TOKEN=${DYNALIST_TOKEN}
+      - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
+      - TWITTER_CLIENT_SECRET=${TWITTER_CLIENT_SECRET}
+      - TWITTER_REDIRECT_URL=${TWITTER_REDIRECT_URL:-http://localhost:8080/callback}
+      - TW_USER=${TW_USER}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-1h}
+      - TOKEN_FILE_PATH=/app/data/token.json
+      - CACHE_FILE_PATH=/app/data/cache.json
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "${CALLBACK_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "tw2dynalist"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      # Traefik configuration for domain-based OAuth callback
+      - "traefik.enable=${TRAEFIK_ENABLE:-false}"
+      - "traefik.http.routers.tw2dynalist.rule=Host(`${TW2DYNALIST_DOMAIN}`)"
+      - "traefik.http.routers.tw2dynalist.entrypoints=websecure"
+      - "traefik.http.routers.tw2dynalist.tls.certresolver=myresolver"
+      - "traefik.http.services.tw2dynalist.loadbalancer.server.port=8080"
+      # Watchtower auto-update
+      - "com.centurylinklabs.watchtower.enable=true"

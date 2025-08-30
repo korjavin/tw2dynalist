@@ -1,0 +1,30 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Environment and config files
+.env
+.env.example
+docker-compose.yml
+
+# Runtime data
+cache.json
+token.json
+data/
+
+# Build artifacts
+tw2dynalist
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
