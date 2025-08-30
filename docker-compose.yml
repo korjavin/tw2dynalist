@@ -17,8 +17,10 @@ services:
       - CHECK_INTERVAL=${CHECK_INTERVAL:-1h}
       - TOKEN_FILE_PATH=/app/data/token.json
       - CACHE_FILE_PATH=/app/data/cache.json
+      - REMOVE_BOOKMARKS=${REMOVE_BOOKMARKS:-false}
+      - CLEANUP_PROCESSED_BOOKMARKS=${CLEANUP_PROCESSED_BOOKMARKS:-false}
     volumes:
-      - ./data:/app/data
+      - tw2dynalist_data:/app/data
     ports:
       - "${CALLBACK_PORT:-8080}:8080"
     healthcheck:
@@ -36,6 +38,9 @@ services:
       - "traefik.http.services.tw2dynalist.loadbalancer.server.port=8080"
       # Watchtower auto-update
       - "com.centurylinklabs.watchtower.enable=true"
+
+volumes:
+  tw2dynalist_data:
 
 networks:
   tw2dynalist:
