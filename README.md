@@ -24,7 +24,7 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | `TWITTER_CLIENT_ID` | Twitter OAuth 2.0 Client ID | Yes | - |
 | `TWITTER_CLIENT_SECRET` | Twitter OAuth 2.0 Client Secret | Yes | - |
 | `TWITTER_REDIRECT_URL` | OAuth callback URL (e.g., http://localhost:8080/callback) | Yes | - |
-| `TWITTER_USER_ID` | Your Twitter user ID (numeric) | Yes | - |
+| `TW_USER` | Twitter username to monitor | Yes | - |
 | `CACHE_FILE_PATH` | Path to cache file | No | `cache.json` |
 | `TOKEN_FILE_PATH` | Path to OAuth token storage file | No | `token.json` |
 | `CHECK_INTERVAL` | Interval to check for new bookmarks | No | `1h` |
@@ -89,13 +89,6 @@ This application uses OAuth 2.0 with PKCE (Proof Key for Code Exchange) for secu
 - For production use, you may need to apply for Elevated access to the Twitter API
 - The app uses Twitter API v2 endpoints with OAuth 2.0 User Context authentication
 
-## Finding Your Twitter User ID
-
-To find your Twitter User ID, you can:
-1. Use online tools like [tweeterid.com](https://tweeterid.com) - enter your Twitter handle
-2. Check the browser developer tools when visiting your Twitter profile
-3. Look in the token.json file after completing OAuth authentication (it will be saved there)
-
 ## Getting Dynalist API Token
 
 1. Log in to your Dynalist account
@@ -121,7 +114,7 @@ cp .env.example .env
 DYNALIST_TOKEN=your_dynalist_api_token_here
 TWITTER_CLIENT_ID=your_twitter_client_id_here
 TWITTER_CLIENT_SECRET=your_twitter_client_secret_here
-TWITTER_USER_ID=your_twitter_user_id_here
+TW_USER=your_twitter_username_here
 
 # Optional
 TWITTER_REDIRECT_URL=http://localhost:8080/callback
@@ -223,7 +216,7 @@ docker run -d \
   -e TWITTER_CLIENT_ID=your_twitter_client_id \
   -e TWITTER_CLIENT_SECRET=your_twitter_client_secret \
   -e TWITTER_REDIRECT_URL=http://localhost:8080/callback \
-  -e TWITTER_USER_ID=your_twitter_user_id \
+  -e TW_USER=your_twitter_username \
   -e LOG_LEVEL=INFO \
   -e TOKEN_FILE_PATH=/app/data/token.json \
   -e CACHE_FILE_PATH=/app/data/cache.json \
@@ -247,7 +240,7 @@ export DYNALIST_TOKEN=your_dynalist_token
 export TWITTER_CLIENT_ID=your_twitter_client_id
 export TWITTER_CLIENT_SECRET=your_twitter_client_secret
 export TWITTER_REDIRECT_URL=your_twitter_redirect_url  
-export TWITTER_USER_ID=your_twitter_user_id
+export TW_USER=your_twitter_username
 export TOKEN_FILE_PATH=token.json
 ./tw2dynalist
 ```

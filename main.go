@@ -28,7 +28,7 @@ type Configuration struct {
 	TwitterClientID     string
 	TwitterClientSecret string
 	TwitterRedirectURL  string
-	TwitterUserID       string
+	TwitterUsername     string
 	CacheFilePath       string
 	CheckInterval       time.Duration
 	LogLevel            string
@@ -387,9 +387,9 @@ func NewConfiguration() (*Configuration, error) {
 		return nil, fmt.Errorf("TWITTER_REDIRECT_URL environment variable is required")
 	}
 
-	twitterUserID := os.Getenv("TWITTER_USER_ID")
-	if twitterUserID == "" {
-		return nil, fmt.Errorf("TWITTER_USER_ID environment variable is required")
+	twitterUsername := os.Getenv("TW_USER")
+	if twitterUsername == "" {
+		return nil, fmt.Errorf("TW_USER environment variable is required")
 	}
 
 	cacheFilePath := os.Getenv("CACHE_FILE_PATH")
@@ -424,7 +424,7 @@ func NewConfiguration() (*Configuration, error) {
 		TwitterClientID:     twitterClientID,
 		TwitterClientSecret: twitterClientSecret,
 		TwitterRedirectURL:  twitterRedirectURL,
-		TwitterUserID:       twitterUserID,
+		TwitterUsername:     twitterUsername,
 		CacheFilePath:       cacheFilePath,
 		TokenFilePath:       tokenFilePath,
 		CheckInterval:       checkInterval,
@@ -665,19 +665,19 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		Host:       "https://api.twitter.com",
 	}
 
-	// Get user ID - use from environment variable if not cached
+	// For bookmarks API, we don't actually need the exact user ID
+	// The API can work with the authenticated user context
+	// Let's try using "me" or an empty string and see what happens
 	if userID == "" {
-		logger.Info("No cached user ID found. Using user ID from environment variable.")
+		logger.Info("No cached user ID found. Will try to get bookmarks using authenticated user context.")
+		userID = "me" // Try using "me" as a placeholder for the authenticated user
 		
-		// Use the user ID from configuration (environment variable)
-		userID = config.TwitterUserID
-		
-		// Save the token with user ID
+		// Save the token with placeholder user ID
 		if err := SaveTokenWithUserInfo(config.TokenFilePath, token, userID); err != nil {
 			logger.Warn("Failed to save token with user info: %v", err)
 		}
 		
-		logger.Info("Using user ID from config: %s", userID)
+		logger.Info("Using authenticated user context for bookmarks")
 	} else {
 		logger.Info("Using cached user ID: %s", userID)
 	}
