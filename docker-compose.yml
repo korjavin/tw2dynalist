@@ -6,7 +6,7 @@ services:
     container_name: tw2dynalist
     restart: unless-stopped
     networks:
-      - tw2dynalist
+      - vaultwarden_default
     environment:
       - DYNALIST_TOKEN=${DYNALIST_TOKEN}
       - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
@@ -43,5 +43,5 @@ volumes:
   tw2dynalist_data:
 
 networks:
-  tw2dynalist:
+  vaultwarden_default:
     external: true
