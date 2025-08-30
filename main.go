@@ -600,7 +600,7 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 			AuthURL:  "https://twitter.com/i/oauth2/authorize",
 			TokenURL: "https://api.twitter.com/2/oauth2/token",
 		},
-		Scopes: []string{"tweet.read", "users.read", "bookmark.read", "bookmark.write"},
+		Scopes: []string{"tweet.read", "users.read", "bookmark.read", "bookmark.write", "offline.access"},
 	}
 
 	// Log the redirect URL for debugging
@@ -685,6 +685,30 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 			return nil, fmt.Errorf("failed to load token: %v", err)
 		}
 		logger.Debug("Loaded token with userID: %s", userID)
+		
+		// Check if token needs refresh
+		if token.Expiry.Before(time.Now().Add(5 * time.Minute)) {
+			logger.Info("Token expires soon, attempting to refresh")
+			if token.RefreshToken != "" {
+				logger.Debug("Refreshing token using refresh token")
+				newToken, err := oauth2Config.TokenSource(context.Background(), token).Token()
+				if err != nil {
+					logger.Warn("Failed to refresh token: %v", err)
+					return nil, fmt.Errorf("token expired and refresh failed: %v", err)
+				}
+				logger.Info("Token refreshed successfully")
+				
+				// Save the new token
+				err = SaveTokenWithUserInfo(config.TokenFilePath, newToken, userID)
+				if err != nil {
+					logger.Warn("Failed to save refreshed token: %v", err)
+				}
+				token = newToken
+			} else {
+				logger.Warn("Token expires soon but no refresh token available")
+				return nil, fmt.Errorf("token expires soon and no refresh token available - manual re-authorization required")
+			}
+		}
 	}
 
 	// Create OAuth2 authorizer

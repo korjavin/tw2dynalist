@@ -54,8 +54,9 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
    - In your app settings, navigate to the "User authentication settings" section
    - Enable OAuth 2.0
    - Set the callback URL to `http://localhost:8080/callback` (or your preferred port)
-   - Select the required scopes: `tweet.read`, `users.read`, `bookmark.read`, `bookmark.write`
+   - Select the required scopes: `tweet.read`, `users.read`, `bookmark.read`, `bookmark.write`, `offline.access`
    - **Note**: `bookmark.write` is required only if you plan to use bookmark removal features
+   - **Note**: `offline.access` is required for automatic token refresh to enable unattended operation
    - Save your changes
 
 5. Get your OAuth 2.0 credentials:
@@ -84,7 +85,8 @@ This application uses OAuth 2.0 with PKCE (Proof Key for Code Exchange) for secu
 
 4. **Subsequent Runs**: 
    - Uses the stored token without requiring re-authorization
-   - Automatically refreshes tokens when needed
+   - Automatically refreshes tokens when needed (requires `offline.access` scope)
+   - Refresh tokens are valid for 6 months, providing long-term unattended operation
 
 ## Additional Requirements
 
