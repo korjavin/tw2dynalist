@@ -600,7 +600,7 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 			AuthURL:  "https://twitter.com/i/oauth2/authorize",
 			TokenURL: "https://api.twitter.com/2/oauth2/token",
 		},
-		Scopes: []string{"tweet.read", "users.read", "bookmark.read"},
+		Scopes: []string{"tweet.read", "users.read", "bookmark.read", "bookmark.write"},
 	}
 
 	// Log the redirect URL for debugging
@@ -859,6 +859,12 @@ func (t *TwitterClient) RemoveBookmark(tweetID string, logger *Logger) error {
 	if resp.StatusCode == 404 {
 		logger.Debug("Bookmark for tweet %s was not found (already removed or never bookmarked)", tweetID)
 		return nil // Consider this a success
+	}
+	
+	if resp.StatusCode == 403 {
+		logger.Error("Insufficient permissions to remove bookmarks. You need to re-authorize with bookmark.write scope.")
+		logger.Info("Delete the token.json file and run the app again to re-authorize with the correct permissions.")
+		return fmt.Errorf("insufficient permissions for bookmark removal - re-authorization required")
 	}
 	
 	return fmt.Errorf("failed to remove bookmark (HTTP %d): %s", resp.StatusCode, string(body))
