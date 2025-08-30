@@ -28,7 +28,7 @@ type Configuration struct {
 	TwitterClientID     string
 	TwitterClientSecret string
 	TwitterRedirectURL  string
-	TwitterUsername     string
+	TwitterUserID       string
 	CacheFilePath       string
 	CheckInterval       time.Duration
 	LogLevel            string
@@ -387,8 +387,10 @@ func NewConfiguration() (*Configuration, error) {
 		return nil, fmt.Errorf("TWITTER_REDIRECT_URL environment variable is required")
 	}
 
-	twitterUsername := os.Getenv("TW_USER")
-	// TW_USER is now optional since we don't need it for the API calls
+	twitterUserID := os.Getenv("TWITTER_USER_ID")
+	if twitterUserID == "" {
+		return nil, fmt.Errorf("TWITTER_USER_ID environment variable is required")
+	}
 
 	cacheFilePath := os.Getenv("CACHE_FILE_PATH")
 	if cacheFilePath == "" {
@@ -422,7 +424,7 @@ func NewConfiguration() (*Configuration, error) {
 		TwitterClientID:     twitterClientID,
 		TwitterClientSecret: twitterClientSecret,
 		TwitterRedirectURL:  twitterRedirectURL,
-		TwitterUsername:     twitterUsername,
+		TwitterUserID:       twitterUserID,
 		CacheFilePath:       cacheFilePath,
 		TokenFilePath:       tokenFilePath,
 		CheckInterval:       checkInterval,
@@ -663,21 +665,19 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		Host:       "https://api.twitter.com",
 	}
 
-	// Get user ID - only if not cached
+	// Get user ID - use from environment variable if not cached
 	if userID == "" {
-		logger.Warn("No cached user ID found. Using fallback user ID.")
-		logger.Info("If you need to update user info, delete the token.json file and re-authenticate.")
+		logger.Info("No cached user ID found. Using user ID from environment variable.")
 		
-		// Use the known user ID from previous successful authentication
-		// The bookmarks API requires a valid user ID
-		userID = "14850978"
+		// Use the user ID from configuration (environment variable)
+		userID = config.TwitterUserID
 		
 		// Save the token with user ID
 		if err := SaveTokenWithUserInfo(config.TokenFilePath, token, userID); err != nil {
 			logger.Warn("Failed to save token with user info: %v", err)
 		}
 		
-		logger.Info("Using fallback user ID: %s", userID)
+		logger.Info("Using user ID from config: %s", userID)
 	} else {
 		logger.Info("Using cached user ID: %s", userID)
 	}
