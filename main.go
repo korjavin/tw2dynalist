@@ -713,10 +713,16 @@ func (t *TwitterClient) GetBookmarks(logger *Logger) ([]Tweet, error) {
 	}
 
 	ctx := context.Background()
+	logger.Debug("Making TweetBookmarksLookup API call with userID: %s", t.userID)
+	logger.Debug("API request options: MaxResults=%d, TweetFields=%v", opts.MaxResults, opts.TweetFields)
+	
 	bookmarksResponse, err := t.client.TweetBookmarksLookup(ctx, t.userID, opts)
 	if err != nil {
+		logger.Error("TweetBookmarksLookup failed: %v", err)
 		return nil, fmt.Errorf("failed to get bookmarks: %v", err)
 	}
+	
+	logger.Debug("API call successful, checking response...")
 
 	if bookmarksResponse.Raw == nil || len(bookmarksResponse.Raw.Tweets) == 0 {
 		logger.Info("No bookmarks found")
