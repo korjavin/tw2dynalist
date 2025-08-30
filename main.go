@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,12 +60,14 @@ type TwitterClient struct {
 	userID string
 }
 
-// OAuth2Token represents an OAuth2 token
+// OAuth2Token represents an OAuth2 token with user info
 type OAuth2Token struct {
 	AccessToken  string    `json:"access_token"`
 	TokenType    string    `json:"token_type"`
 	RefreshToken string    `json:"refresh_token"`
 	Expiry       time.Time `json:"expiry"`
+	UserID       string    `json:"user_id,omitempty"`
+	Username     string    `json:"username,omitempty"`
 }
 
 // OAuth2Authorizer implements the Authorizer interface for OAuth2
@@ -88,9 +91,18 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 	return t.token, nil
 }
 
-// SaveToken saves the OAuth2 token to a file
-func SaveToken(filePath string, token *oauth2.Token) error {
-	data, err := json.MarshalIndent(token, "", "  ")
+// SaveTokenWithUserInfo saves the OAuth2 token with user information to a file
+func SaveTokenWithUserInfo(filePath string, token *oauth2.Token, userID, username string) error {
+	tokenData := OAuth2Token{
+		AccessToken:  token.AccessToken,
+		TokenType:    token.TokenType,
+		RefreshToken: token.RefreshToken,
+		Expiry:       token.Expiry,
+		UserID:       userID,
+		Username:     username,
+	}
+
+	data, err := json.MarshalIndent(tokenData, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal token: %v", err)
 	}
@@ -102,19 +114,38 @@ func SaveToken(filePath string, token *oauth2.Token) error {
 	return nil
 }
 
-// LoadToken loads the OAuth2 token from a file
-func LoadToken(filePath string) (*oauth2.Token, error) {
+// SaveToken saves the OAuth2 token to a file (without user info)
+func SaveToken(filePath string, token *oauth2.Token) error {
+	return SaveTokenWithUserInfo(filePath, token, "", "")
+}
+
+// LoadTokenWithUserInfo loads the OAuth2 token and user info from a file
+func LoadTokenWithUserInfo(filePath string) (*oauth2.Token, string, string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read token file: %v", err)
+		return nil, "", "", fmt.Errorf("failed to read token file: %v", err)
 	}
 
-	var token oauth2.Token
-	if err := json.Unmarshal(data, &token); err != nil {
-		return nil, fmt.Errorf("failed to parse token file: %v", err)
+	// First try to parse as the new format with user info
+	var tokenData OAuth2Token
+	if err := json.Unmarshal(data, &tokenData); err != nil {
+		return nil, "", "", fmt.Errorf("failed to parse token file: %v", err)
 	}
 
-	return &token, nil
+	token := &oauth2.Token{
+		AccessToken:  tokenData.AccessToken,
+		TokenType:    tokenData.TokenType,
+		RefreshToken: tokenData.RefreshToken,
+		Expiry:       tokenData.Expiry,
+	}
+
+	return token, tokenData.UserID, tokenData.Username, nil
+}
+
+// LoadToken loads the OAuth2 token from a file (backward compatibility)
+func LoadToken(filePath string) (*oauth2.Token, error) {
+	token, _, _, err := LoadTokenWithUserInfo(filePath)
+	return token, err
 }
 
 // GenerateCodeVerifier creates a code verifier for PKCE
@@ -172,6 +203,118 @@ func ExchangeToken(config *oauth2.Config, code string, codeVerifier string) (*oa
 	}
 
 	return config.Exchange(ctx, code, opts...)
+}
+
+// StartCallbackServer starts an HTTP server to handle OAuth callbacks
+func StartCallbackServer(port string, codeChan chan string, stateChan chan string, errorChan chan error) *http.Server {
+	mux := http.NewServeMux()
+	
+	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Received callback request: %s", r.URL.String())
+		
+		// Parse query parameters
+		query := r.URL.Query()
+		code := query.Get("code")
+		state := query.Get("state")
+		errorParam := query.Get("error")
+		
+		log.Printf("Callback parameters - code: %s, state: %s, error: %s", 
+			code[:min(len(code), 10)]+"...", state, errorParam)
+		
+		if errorParam != "" {
+			errorDescription := query.Get("error_description")
+			errorMsg := fmt.Sprintf("OAuth Error: %s - %s", errorParam, errorDescription)
+			log.Printf("OAuth callback error: %s", errorMsg)
+			http.Error(w, errorMsg, http.StatusBadRequest)
+			errorChan <- fmt.Errorf("OAuth error: %s - %s", errorParam, errorDescription)
+			return
+		}
+		
+		if code == "" {
+			log.Printf("Authorization code not found in callback")
+			http.Error(w, "Authorization code not found", http.StatusBadRequest)
+			errorChan <- fmt.Errorf("authorization code not found in callback")
+			return
+		}
+		
+		// Send success response
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<html>
+			<head><title>Authorization Successful</title></head>
+			<body>
+				<h1>✅ Authorization Successful!</h1>
+				<p>You can close this window and return to your application.</p>
+				<p>The authorization code has been received and your app is now authenticating...</p>
+				<script>setTimeout(function(){ window.close(); }, 5000);</script>
+			</body>
+			</html>
+		`))
+		
+		log.Printf("Sending authorization code to application...")
+		// Send the code and state to the channels
+		codeChan <- code
+		stateChan <- state
+	})
+	
+	// Add a health check endpoint
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<html>
+			<head><title>OAuth Callback Server</title></head>
+			<body>
+				<h1>OAuth Callback Server Running</h1>
+				<p>This server is waiting for OAuth callbacks on /callback</p>
+			</body>
+			</html>
+		`))
+	})
+	
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+	
+	go func() {
+		log.Printf("Starting callback server on port %s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Callback server error: %v", err)
+			errorChan <- fmt.Errorf("failed to start callback server: %v", err)
+		}
+	}()
+	
+	return server
+}
+
+// Helper function for min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// ExtractPortFromURL extracts the port from a URL, returns "8080" as default
+func ExtractPortFromURL(redirectURL string) (string, error) {
+	parsedURL, err := url.Parse(redirectURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid redirect URL: %v", err)
+	}
+	
+	port := parsedURL.Port()
+	if port == "" {
+		// Default ports based on scheme
+		if parsedURL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "8080"
+		}
+	}
+	
+	return port, nil
 }
 
 // Tweet represents a simplified tweet structure
@@ -437,9 +580,10 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 
 	// Check if we have a token file
 	var token *oauth2.Token
+	var userID, username string
 	var err error
 
-	if _, err := os.Stat(config.TokenFilePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(config.TokenFilePath); os.IsNotExist(statErr) {
 		// No token file, need to get a new token
 		logger.Info("No token file found at %s", config.TokenFilePath)
 
@@ -453,14 +597,44 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		logger.Debug("Code verifier: %s", codeVerifier)
 		logger.Debug("Code challenge: %s", codeChallenge)
 
+		// Extract port from redirect URL for callback server
+		port, err := ExtractPortFromURL(config.TwitterRedirectURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract port from redirect URL: %v", err)
+		}
+
+		// Start the callback server
+		logger.Debug("Starting callback server on port %s", port)
+		codeChan := make(chan string, 1)
+		stateChan := make(chan string, 1)
+		errorChan := make(chan error, 1)
+		
+		callbackServer := StartCallbackServer(port, codeChan, stateChan, errorChan)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			callbackServer.Shutdown(ctx)
+		}()
+
+		// Wait a moment for server to start
+		time.Sleep(500 * time.Millisecond)
+
+		logger.Info("Callback server started on http://localhost:%s/callback", port)
 		logger.Info("Please visit the following URL to authorize this application:")
 		authURL := GetAuthURL(oauth2Config, "state", codeChallenge)
 		logger.Info("%s", authURL)
+		logger.Info("Waiting for OAuth callback... (this will wait indefinitely until you complete authorization)")
 
-		// Wait for the user to enter the authorization code
-		logger.Info("Enter the authorization code: ")
+		// Wait for the callback with longer timeout
 		var code string
-		fmt.Scanln(&code)
+		select {
+		case code = <-codeChan:
+			logger.Debug("Received authorization code from callback")
+		case err := <-errorChan:
+			return nil, fmt.Errorf("OAuth callback error: %v", err)
+		case <-time.After(30 * time.Minute):
+			return nil, fmt.Errorf("OAuth authorization timeout after 30 minutes")
+		}
 
 		// Exchange the authorization code for a token using the code verifier
 		token, err = ExchangeToken(oauth2Config, code, codeVerifier)
@@ -468,16 +642,17 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 			return nil, fmt.Errorf("failed to exchange token: %v", err)
 		}
 
-		// Save the token
+		// We'll need to get user info after creating the client, so save token without user info for now
 		if err := SaveToken(config.TokenFilePath, token); err != nil {
 			logger.Warn("Failed to save token: %v", err)
 		}
 	} else {
 		// Load the token from the file
-		token, err = LoadToken(config.TokenFilePath)
+		token, userID, username, err = LoadTokenWithUserInfo(config.TokenFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load token: %v", err)
 		}
+		logger.Debug("Loaded token with userID: %s, username: %s", userID, username)
 	}
 
 	// Create OAuth2 authorizer
@@ -492,24 +667,49 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		Host:       "https://api.twitter.com",
 	}
 
-	// Get user ID from username
-	logger.Info("Looking up user ID for username: %s", config.TwitterUsername)
-	opts := twitterv2.UserLookupOpts{
-		UserFields: []twitterv2.UserField{twitterv2.UserFieldID, twitterv2.UserFieldName, twitterv2.UserFieldUserName},
-	}
+	// Get user ID from username - only if not cached
+	if userID == "" || username == "" {
+		logger.Info("Looking up user ID for username: %s", config.TwitterUsername)
+		opts := twitterv2.UserLookupOpts{
+			UserFields: []twitterv2.UserField{twitterv2.UserFieldID, twitterv2.UserFieldName, twitterv2.UserFieldUserName},
+		}
 
-	ctx := context.Background()
-	userResponse, err := client.UserNameLookup(ctx, []string{config.TwitterUsername}, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to lookup Twitter user: %v", err)
-	}
+		ctx := context.Background()
+		userResponse, err := client.UserNameLookup(ctx, []string{config.TwitterUsername}, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to lookup Twitter user: %v", err)
+		}
 
-	if len(userResponse.Raw.Users) == 0 {
-		return nil, fmt.Errorf("user not found: %s", config.TwitterUsername)
-	}
+		logger.Debug("UserResponse received: %+v", userResponse)
+		
+		if userResponse.Raw == nil {
+			return nil, fmt.Errorf("invalid response from Twitter API: Raw field is nil")
+		}
 
-	userID := userResponse.Raw.Users[0].ID
-	logger.Info("Authenticated as Twitter user: @%s (ID: %s)", config.TwitterUsername, userID)
+		logger.Debug("UserResponse.Raw: %+v", userResponse.Raw)
+		
+		if userResponse.Raw.Users == nil {
+			return nil, fmt.Errorf("invalid response from Twitter API: Users field is nil")
+		}
+
+		if len(userResponse.Raw.Users) == 0 {
+			return nil, fmt.Errorf("user not found: %s", config.TwitterUsername)
+		}
+
+		logger.Debug("Found %d users, first user: %+v", len(userResponse.Raw.Users), userResponse.Raw.Users[0])
+		
+		userID = userResponse.Raw.Users[0].ID
+		username = userResponse.Raw.Users[0].UserName
+		
+		// Save the token with user info for future use
+		if err := SaveTokenWithUserInfo(config.TokenFilePath, token, userID, username); err != nil {
+			logger.Warn("Failed to save token with user info: %v", err)
+		}
+		
+		logger.Info("Looked up and cached Twitter user: @%s (ID: %s)", username, userID)
+	} else {
+		logger.Info("Using cached Twitter user: @%s (ID: %s)", username, userID)
+	}
 
 	return &TwitterClient{
 		client: client,

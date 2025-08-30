@@ -29,3 +29,4 @@ cache.json
 .vscode/
 *.swp
 *.swo
+token.json
