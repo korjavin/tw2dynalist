@@ -76,6 +76,233 @@ type OAuth2Authorizer struct {
 	token *oauth2.Token
 }
 
+// AppMetrics holds application status and metrics (safe for public display)
+type AppMetrics struct {
+	mu                  sync.Mutex
+	StartTime          time.Time     `json:"start_time"`
+	LastCheckTime      *time.Time    `json:"last_check_time"`
+	NextCheckTime      *time.Time    `json:"next_check_time"`
+	Status             string        `json:"status"`
+	TotalBookmarksProcessed int      `json:"total_bookmarks_processed"`
+	TotalDynalistSaves  int          `json:"total_dynalist_saves"`
+	LastError          string        `json:"last_error"`
+	LastErrorTime      *time.Time    `json:"last_error_time"`
+	CheckInterval      time.Duration `json:"check_interval"`
+	TokenExpiresAt     *time.Time    `json:"token_expires_at"`
+	TokenRefreshCount  int           `json:"token_refresh_count"`
+}
+
+var globalMetrics = &AppMetrics{
+	StartTime: time.Now(),
+	Status:    "Starting",
+}
+
+// UpdateStatus safely updates the application status
+func (m *AppMetrics) UpdateStatus(status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Status = status
+}
+
+// RecordCheck safely records a check operation
+func (m *AppMetrics) RecordCheck(bookmarksProcessed, dynalistSaves int, nextCheck time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	m.LastCheckTime = &now
+	m.NextCheckTime = &nextCheck
+	m.TotalBookmarksProcessed += bookmarksProcessed
+	m.TotalDynalistSaves += dynalistSaves
+}
+
+// RecordError safely records an error
+func (m *AppMetrics) RecordError(err string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	m.LastError = err
+	m.LastErrorTime = &now
+}
+
+// SetTokenInfo safely sets token expiry info
+func (m *AppMetrics) SetTokenInfo(expiresAt time.Time, refreshCount int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.TokenExpiresAt = &expiresAt
+	m.TokenRefreshCount = refreshCount
+}
+
+// SetCheckInterval safely sets the check interval
+func (m *AppMetrics) SetCheckInterval(interval time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CheckInterval = interval
+}
+
+// GetSafeCopy returns a safe copy of metrics for display (without mutex)
+func (m *AppMetrics) GetSafeCopy() AppMetrics {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return AppMetrics{
+		StartTime:               m.StartTime,
+		LastCheckTime:           m.LastCheckTime,
+		NextCheckTime:           m.NextCheckTime,
+		Status:                  m.Status,
+		TotalBookmarksProcessed: m.TotalBookmarksProcessed,
+		TotalDynalistSaves:      m.TotalDynalistSaves,
+		LastError:               m.LastError,
+		LastErrorTime:           m.LastErrorTime,
+		CheckInterval:           m.CheckInterval,
+		TokenExpiresAt:          m.TokenExpiresAt,
+		TokenRefreshCount:       m.TokenRefreshCount,
+	}
+}
+
+// getDashboardHTML returns the HTML dashboard for application status
+func getDashboardHTML(metrics AppMetrics) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Twitter to Dynalist Bot - Status</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #1da1f2; text-align: center; margin-bottom: 30px; }
+        .status { padding: 10px 20px; border-radius: 5px; margin: 10px 0; font-weight: bold; }
+        .status.running { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .status.starting { background-color: #fff3cd; color: #856404; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+        .metric { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #1da1f2; }
+        .metric-label { font-weight: bold; color: #495057; font-size: 14px; }
+        .metric-value { font-size: 18px; color: #212529; margin-top: 5px; }
+        .error-box { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .footer { text-align: center; margin-top: 30px; color: #6c757d; font-size: 14px; }
+        .refresh { float: right; background: #1da1f2; color: white; padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; }
+    </style>
+    <script>
+        function refresh() { window.location.reload(); }
+        setInterval(refresh, 30000); // Auto-refresh every 30 seconds
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>🐦 Twitter to Dynalist Bot <button class="refresh" onclick="refresh()">Refresh</button></h1>
+        
+        <div class="status %s">
+            Status: %s
+        </div>
+        
+        <div class="metric-grid">
+            <div class="metric">
+                <div class="metric-label">Uptime</div>
+                <div class="metric-value">%s</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Check Interval</div>
+                <div class="metric-value">%s</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Last Check</div>
+                <div class="metric-value">%s</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Next Check</div>
+                <div class="metric-value">%s</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Total Bookmarks Processed</div>
+                <div class="metric-value">%d</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Total Dynalist Saves</div>
+                <div class="metric-value">%d</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Token Expires</div>
+                <div class="metric-value">%s</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Token Refreshes</div>
+                <div class="metric-value">%d</div>
+            </div>
+        </div>
+        
+        %s
+        
+        <div class="footer">
+            <p>🔄 Auto-refreshes every 30 seconds | <a href="/api/metrics">JSON API</a></p>
+            <p><em>No personal data is exposed on this dashboard</em></p>
+        </div>
+    </div>
+</body>
+</html>`,
+		getStatusClass(metrics.Status),
+		metrics.Status,
+		formatDuration(time.Since(metrics.StartTime)),
+		formatDuration(metrics.CheckInterval),
+		formatOptionalTime(metrics.LastCheckTime, "Never"),
+		formatOptionalTime(metrics.NextCheckTime, "Not scheduled"),
+		metrics.TotalBookmarksProcessed,
+		metrics.TotalDynalistSaves,
+		formatOptionalTime(metrics.TokenExpiresAt, "Unknown"),
+		metrics.TokenRefreshCount,
+		formatErrorBox(metrics.LastError, metrics.LastErrorTime),
+	)
+}
+
+// Helper functions for dashboard formatting
+func getStatusClass(status string) string {
+	switch status {
+	case "Running", "Monitoring":
+		return "running"
+	case "Starting", "Initializing":
+		return "starting"
+	case "Error", "Failed":
+		return "error"
+	default:
+		return "starting"
+	}
+}
+
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.0fs", d.Seconds())
+	} else if d < time.Hour {
+		return fmt.Sprintf("%.1fm", d.Minutes())
+	} else if d < 24*time.Hour {
+		return fmt.Sprintf("%.1fh", d.Hours())
+	} else {
+		return fmt.Sprintf("%.1fd", d.Hours()/24)
+	}
+}
+
+func formatOptionalTime(t *time.Time, defaultStr string) string {
+	if t == nil {
+		return defaultStr
+	}
+	if time.Since(*t) < 24*time.Hour {
+		return t.Format("15:04:05")
+	}
+	return t.Format("Jan 2 15:04")
+}
+
+func formatErrorBox(lastError string, lastErrorTime *time.Time) string {
+	if lastError == "" {
+		return ""
+	}
+	timeStr := "Unknown time"
+	if lastErrorTime != nil {
+		timeStr = formatOptionalTime(lastErrorTime, "Unknown time")
+	}
+	return fmt.Sprintf(`<div class="error-box">
+		<strong>Last Error:</strong> %s<br>
+		<strong>Time:</strong> %s
+	</div>`, lastError, timeStr)
+}
+
 // Add adds the OAuth2 authorization to the request
 func (a *OAuth2Authorizer) Add(req *http.Request) {
 	// Add the Authorization header with the access token
@@ -205,38 +432,77 @@ func ExchangeToken(config *oauth2.Config, code string, codeVerifier string) (*oa
 	return config.Exchange(ctx, code, opts...)
 }
 
-// StartCallbackServer starts an HTTP server to handle OAuth callbacks
-func StartCallbackServer(port string, codeChan chan string, stateChan chan string, errorChan chan error) *http.Server {
-	mux := http.NewServeMux()
-	
+// handleDashboard serves the HTML dashboard.
+func handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	metrics := globalMetrics.GetSafeCopy()
+	html := getDashboardHTML(metrics)
+	w.Write([]byte(html))
+}
+
+// handleMetrics serves the metrics as JSON.
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	metrics := globalMetrics.GetSafeCopy()
+	jsonData, err := json.MarshalIndent(metrics, "", "  ")
+	if err != nil {
+		http.Error(w, "Failed to encode metrics", http.StatusInternalServerError)
+		return
+	}
+	w.Write(jsonData)
+}
+
+// startWebServer starts the main web server.
+func startWebServer(port string, mux *http.ServeMux, logger *Logger) *http.Server {
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+
+	go func() {
+		logger.Info("Starting web server on http://localhost:%s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("Web server error: %v", err)
+		}
+	}()
+
+	return server
+}
+
+// setupCallbackHandler sets up the OAuth callback endpoint on the given mux.
+func setupCallbackHandler(mux *http.ServeMux, codeChan chan string, stateChan chan string, errorChan chan error, logger *Logger) {
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Received callback request: %s", r.URL.String())
-		
+		logger.Debug("Received callback request: %s", r.URL.String())
+
 		// Parse query parameters
 		query := r.URL.Query()
 		code := query.Get("code")
 		state := query.Get("state")
 		errorParam := query.Get("error")
-		
-		log.Printf("Callback parameters - code: %s, state: %s, error: %s", 
+
+		logger.Debug("Callback parameters - code: %s, state: %s, error: %s", 
 			code[:min(len(code), 10)]+"...", state, errorParam)
-		
+
 		if errorParam != "" {
 			errorDescription := query.Get("error_description")
 			errorMsg := fmt.Sprintf("OAuth Error: %s - %s", errorParam, errorDescription)
-			log.Printf("OAuth callback error: %s", errorMsg)
+			logger.Error("OAuth callback error: %s", errorMsg)
 			http.Error(w, errorMsg, http.StatusBadRequest)
 			errorChan <- fmt.Errorf("OAuth error: %s - %s", errorParam, errorDescription)
 			return
 		}
-		
+
 		if code == "" {
-			log.Printf("Authorization code not found in callback")
+			logger.Warn("Authorization code not found in callback")
 			http.Error(w, "Authorization code not found", http.StatusBadRequest)
 			errorChan <- fmt.Errorf("authorization code not found in callback")
 			return
 		}
-		
+
 		// Send success response
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -251,42 +517,12 @@ func StartCallbackServer(port string, codeChan chan string, stateChan chan strin
 			</body>
 			</html>
 		`))
-		
-		log.Printf("Sending authorization code to application...")
+
+		logger.Debug("Sending authorization code to application...")
 		// Send the code and state to the channels
 		codeChan <- code
 		stateChan <- state
 	})
-	
-	// Add a health check endpoint
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`
-			<html>
-			<head><title>OAuth Callback Server</title></head>
-			<body>
-				<h1>OAuth Callback Server Running</h1>
-				<p>This server is waiting for OAuth callbacks on /callback</p>
-			</body>
-			</html>
-		`))
-	})
-	
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: mux,
-	}
-	
-	go func() {
-		log.Printf("Starting callback server on port %s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Callback server error: %v", err)
-			errorChan <- fmt.Errorf("failed to start callback server: %v", err)
-		}
-	}()
-	
-	return server
 }
 
 // Helper function for min
@@ -439,7 +675,8 @@ func NewConfiguration() (*Configuration, error) {
 		LogLevel:                  logLevel,
 		RemoveBookmarks:           removeBookmarks,
 		CleanupProcessedBookmarks: cleanupProcessedBookmarks,
-	}, nil
+	},
+ nil
 }
 
 // NewCache initializes a new cache or loads an existing one
@@ -588,7 +825,7 @@ func (d *DynalistClient) AddToInbox(content, note string, logger *Logger) error 
 }
 
 // NewTwitterClient creates a new Twitter API client
-func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, error) {
+func NewTwitterClient(config *Configuration, logger *Logger, mux *http.ServeMux) (*TwitterClient, error) {
 	logger.Debug("Creating OAuth2 configuration")
 
 	// Create OAuth2 configuration
@@ -625,33 +862,14 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 		logger.Debug("Code verifier: %s", codeVerifier)
 		logger.Debug("Code challenge: %s", codeChallenge)
 
-		// Use CALLBACK_PORT environment variable, fallback to extracting from redirect URL
-		port := os.Getenv("CALLBACK_PORT")
-		if port == "" {
-			var err error
-			port, err = ExtractPortFromURL(config.TwitterRedirectURL)
-			if err != nil {
-				return nil, fmt.Errorf("failed to extract port from redirect URL: %v", err)
-			}
-		}
-
-		// Start the callback server
-		logger.Debug("Starting callback server on port %s", port)
+		// Set up the callback handler
+		logger.Debug("Setting up callback handler")
 		codeChan := make(chan string, 1)
 		stateChan := make(chan string, 1)
 		errorChan := make(chan error, 1)
 		
-		callbackServer := StartCallbackServer(port, codeChan, stateChan, errorChan)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			callbackServer.Shutdown(ctx)
-		}()
+		setupCallbackHandler(mux, codeChan, stateChan, errorChan, logger)
 
-		// Wait a moment for server to start
-		time.Sleep(500 * time.Millisecond)
-
-		logger.Info("Callback server started on http://localhost:%s/callback", port)
 		logger.Info("Please visit the following URL to authorize this application:")
 		authURL := GetAuthURL(oauth2Config, "state", codeChallenge)
 		logger.Info("%s", authURL)
@@ -764,7 +982,8 @@ func NewTwitterClient(config *Configuration, logger *Logger) (*TwitterClient, er
 	return &TwitterClient{
 		client: client,
 		userID: userID,
-	}, nil
+	},
+ nil
 }
 
 // GetBookmarks retrieves bookmarked tweets for the authenticated user
@@ -962,6 +1181,34 @@ func main() {
 	logger := NewLogger(config.LogLevel)
 	logger.Info("Log level set to: %s", config.LogLevel)
 
+	// Create a central ServeMux
+	mux := http.NewServeMux()
+
+	// Add dashboard and metrics handlers
+	mux.HandleFunc("/", handleDashboard)
+	mux.HandleFunc("/api/metrics", handleMetrics)
+
+	// Determine server port
+	port := os.Getenv("CALLBACK_PORT")
+	if port == "" {
+		var err error
+		port, err = ExtractPortFromURL(config.TwitterRedirectURL)
+		if err != nil {
+			logger.Fatal("Failed to extract port from redirect URL: %v", err)
+		}
+	}
+
+	// Start the web server
+	webServer := startWebServer(port, mux, logger)
+	defer func() {
+		logger.Info("Shutting down web server...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := webServer.Shutdown(ctx); err != nil {
+			logger.Error("Web server shutdown error: %v", err)
+		}
+	}()
+
 	// Initialize cache
 	logger.Info("Initializing cache from: %s", config.CacheFilePath)
 	cache, err := NewCache(config.CacheFilePath, logger)
@@ -974,7 +1221,7 @@ func main() {
 	dynalistClient := NewDynalistClient(config.DynalistToken, logger)
 
 	logger.Info("Initializing Twitter client")
-	twitterClient, err := NewTwitterClient(config, logger)
+	twitterClient, err := NewTwitterClient(config, logger, mux)
 	if err != nil {
 		logger.Fatal("Failed to initialize Twitter client: %v", err)
 	}
