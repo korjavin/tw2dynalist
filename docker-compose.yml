@@ -1,15 +1,12 @@
 version: '3.8'
 
-networks:
-  tw2dynalist_net:
-
 services:
   tw2dynalist:
     image: ghcr.io/korjavin/tw2dynalist:latest
     container_name: tw2dynalist
     restart: unless-stopped
     networks:
-      - tw2dynalist_net
+      - vaultwarden_default
     environment:
       - DYNALIST_TOKEN=${DYNALIST_TOKEN}
       - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
@@ -50,7 +47,7 @@ services:
     container_name: ntfy
     restart: unless-stopped
     networks:
-      - tw2dynalist_net
+      - vaultwarden_default
     command: serve
     volumes:
       - ntfy_cache:/var/cache/ntfy
@@ -62,8 +59,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    labels:
+      - "traefik.enable=${TRAEFIK_ENABLE:-false}"
+      - "traefik.http.routers.ntfy.rule=Host(`${NTFY_DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=myresolver"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
 
 volumes:
   tw2dynalist_data:
   ntfy_cache:
   ntfy_etc:
+
+networks:
+  vaultwarden_default:
+    external: true

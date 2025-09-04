@@ -90,7 +90,13 @@ func Load() (*Config, error) {
 	}
 
 	ntfyServer := os.Getenv("NTFY_SERVER")
+	if ntfyServer == "" {
+		ntfyServer = "http://ntfy:80"
+	}
 	ntfyTopic := os.Getenv("NTFY_TOPIC")
+	if ntfyTopic == "" {
+		ntfyTopic = "tw2dynalist"
+	}
 
 	return &Config{
 		DynalistToken:             dynalistToken,

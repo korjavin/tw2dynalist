@@ -184,15 +184,34 @@ TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
 
 This application can send push notifications when a new bookmark is saved to Dynalist. It uses a self-hosted [ntfy](httpshttps://ntfy.sh/) service, which is included in the `docker-compose.yml` file and will be started automatically.
 
-To receive notifications:
+### Receiving Notifications
+
+To receive notifications, you need to subscribe to your ntfy topic.
+
+#### Local Network Access
+
+If your phone or computer is on the same network as your Docker server, you can subscribe using the server's local IP address.
 
 1.  **Start the services**: `docker-compose up -d`
-2.  **Find your server IP address**. This will be the IP address of the machine running Docker.
-3.  **Subscribe to the topic**:
-    - **Mobile App**: Download the ntfy app for [Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) or [iOS](https://apps.apple.com/us/app/ntfy/id1625396117) and subscribe to the topic: `http://<server-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
-    - **Web Client**: Open your browser and go to `http://<server-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
+2.  **Find your server's local IP address**.
+3.  **Subscribe to the topic**: Open the ntfy app or your web browser and subscribe to `http://<your-local-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
 
-By default, the `NTFY_PORT` is `8081` and the `NTFY_TOPIC` is `tw2dynalist`. You can change these in your `.env` file.
+By default, the `NTFY_PORT` is `8081` and the `NTFY_TOPIC` is `tw2dynalist`.
+
+#### External Access (via Traefik)
+
+For receiving notifications when you are outside your local network, you need to expose the `ntfy` service to the internet. The recommended way is to use the existing Traefik integration.
+
+1.  **Ensure Traefik is set up** and you have a domain name pointing to your server.
+2.  **Enable Traefik** in your `.env` file by setting `TRAEFIK_ENABLE=true`.
+3.  **Set your ntfy domain** in the `.env` file:
+    ```
+    NTFY_DOMAIN=ntfy.yourdomain.com
+    ```
+4.  **Deploy the stack**: `docker-compose up -d`. Traefik will automatically create the route and handle SSL for `https://ntfy.yourdomain.com`.
+5.  **Subscribe to the topic**: Use the ntfy app or a web browser to subscribe to your public topic URL: `https://ntfy.yourdomain.com/${NTFY_TOPIC}`.
+
+This method is more secure and is the recommended way to receive notifications on mobile devices.
 
 ## Bookmark Management
 
