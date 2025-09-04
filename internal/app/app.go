@@ -57,7 +57,7 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("failed to initialize Twitter client: %v", err)
 	}
 
-	ntfyClient := ntfy.NewClient(cfg.NtfyServer, cfg.NtfyTopic, log)
+	ntfyClient := ntfy.NewClient(cfg.NtfyServer, cfg.NtfyTopic, cfg.NtfyUsername, cfg.NtfyPassword, log)
 
 	app := &App{
 		Config:   cfg,

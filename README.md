@@ -213,6 +213,31 @@ For receiving notifications when you are outside your local network, you need to
 
 This method is more secure and is the recommended way to receive notifications on mobile devices.
 
+### Securing ntfy (Recommended)
+
+If your ntfy server is exposed to the internet, it is **strongly recommended** that you secure it with a username and password. The included `ntfy/server.yml` configuration enables authentication and denies access to unauthenticated users by default.
+
+Follow these steps to create a user and secure your server:
+
+1.  **Add a user to ntfy**: Run the following command to create a new user. You will be prompted to enter a password. Replace `myuser` with your desired username.
+    ```bash
+    docker-compose run --rm ntfy ntfy user add myuser
+    ```
+    This command will create the `user.db` file inside the `ntfy_data` volume.
+
+2.  **Set credentials for the application**: Open your `.env` file and set the username and password you just created. The application needs these to publish notifications.
+    ```
+    NTFY_USERNAME=myuser
+    NTFY_PASSWORD=your_password_here
+    ```
+
+3.  **Restart the services**:
+    ```bash
+    docker-compose restart tw2dynalist
+    ```
+
+4.  **Subscribe with credentials**: When you subscribe to your topic in the ntfy mobile or web app, you will now need to enter your username and password.
+
 ## Bookmark Management
 
 The application provides two options for managing your Twitter bookmarks:

@@ -1,0 +1,22 @@
+# /etc/ntfy/server.yml
+# This file is mounted from ntfy/server.yml
+
+# Set to true if you are running ntfy behind a reverse proxy
+behind-proxy: true
+
+# User database file
+auth-file: /var/lib/ntfy/user.db
+
+# Default access control for users that are not authenticated
+#
+# Permit-all (default):
+#   - All topics can be subscribed to by anyone
+#   - All topics can be published to by anyone
+# Read-only:
+#   - All topics can be subscribed to by anyone
+#   - Only authenticated users can publish to topics
+# Deny-all:
+#   - Only authenticated users can subscribe to topics
+#   - Only authenticated users can publish to topics
+#
+auth-default-access: "deny-all"

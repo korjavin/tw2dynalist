@@ -50,6 +50,8 @@ services:
       - vaultwarden_default
     command: serve
     volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy_data:/var/lib/ntfy
       - ntfy_cache:/var/cache/ntfy
       - ntfy_etc:/etc/ntfy
     ports:
@@ -68,6 +70,7 @@ services:
 
 volumes:
   tw2dynalist_data:
+  ntfy_data:
   ntfy_cache:
   ntfy_etc:
 

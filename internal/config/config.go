@@ -22,6 +22,8 @@ type Config struct {
 	CallbackPort              string
 	NtfyServer                string
 	NtfyTopic                 string
+	NtfyUsername              string
+	NtfyPassword              string
 }
 
 // Load reads configuration from environment variables and returns a Config struct.
@@ -98,6 +100,9 @@ func Load() (*Config, error) {
 		ntfyTopic = "tw2dynalist"
 	}
 
+	ntfyUsername := os.Getenv("NTFY_USERNAME")
+	ntfyPassword := os.Getenv("NTFY_PASSWORD")
+
 	return &Config{
 		DynalistToken:             dynalistToken,
 		TwitterClientID:           twitterClientID,
@@ -113,5 +118,7 @@ func Load() (*Config, error) {
 		CallbackPort:              callbackPort,
 		NtfyServer:                ntfyServer,
 		NtfyTopic:                 ntfyTopic,
+		NtfyUsername:              ntfyUsername,
+		NtfyPassword:              ntfyPassword,
 	}, nil
 }

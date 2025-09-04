@@ -15,13 +15,17 @@ type Client interface {
 type client struct {
 	serverURL string
 	topic     string
+	username  string
+	password  string
 	logger    *logger.Logger
 }
 
-func NewClient(serverURL, topic string, logger *logger.Logger) Client {
+func NewClient(serverURL, topic, username, password string, logger *logger.Logger) Client {
 	return &client{
 		serverURL: serverURL,
 		topic:     topic,
+		username:  username,
+		password:  password,
 		logger:    logger,
 	}
 }
@@ -39,6 +43,9 @@ func (c *client) Send(message string, title string) error {
 	}
 
 	req.Header.Set("Title", title)
+	if c.username != "" && c.password != "" {
+		req.SetBasicAuth(c.username, c.password)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send ntfy notification: %w", err)
