@@ -20,6 +20,10 @@ services:
       - REMOVE_BOOKMARKS=${REMOVE_BOOKMARKS:-false}
       - CLEANUP_PROCESSED_BOOKMARKS=${CLEANUP_PROCESSED_BOOKMARKS:-false}
       - CALLBACK_PORT=${CALLBACK_PORT:-8080}
+      - NTFY_SERVER=${NTFY_SERVER:-http://ntfy:80}
+      - NTFY_TOPIC=${NTFY_TOPIC:-tw2dynalist}
+      - NTFY_USERNAME=${NTFY_USERNAME}
+      - NTFY_PASSWORD=${NTFY_PASSWORD}
     volumes:
       - tw2dynalist_data:/app/data
     ports:
@@ -40,8 +44,42 @@ services:
       # Watchtower auto-update
       - "com.centurylinklabs.watchtower.enable=true"
 
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: ntfy
+    restart: unless-stopped
+    networks:
+      - vaultwarden_default
+    entrypoint: ["/bin/sh", "/ntfy/entrypoint.sh"]
+    command: "serve"
+    environment:
+      - NTFY_USERNAME=${NTFY_USERNAME}
+      - NTFY_PASSWORD=${NTFY_PASSWORD}
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ./ntfy/entrypoint.sh:/ntfy/entrypoint.sh:ro
+      - ntfy_data:/var/lib/ntfy
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_etc:/etc/ntfy
+    ports:
+      - "${NTFY_PORT:-8081}:80"
+    healthcheck:
+      test: ["wget", "--no-verbose", "--spider", "http://localhost:80/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=${TRAEFIK_ENABLE:-false}"
+      - "traefik.http.routers.ntfy.rule=Host(`${NTFY_DOMAIN}`)"
+      - "traefik.http.routers.ntfy.entrypoints=websecure"
+      - "traefik.http.routers.ntfy.tls.certresolver=myresolver"
+      - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+
 volumes:
   tw2dynalist_data:
+  ntfy_data:
+  ntfy_cache:
+  ntfy_etc:
 
 networks:
   vaultwarden_default:

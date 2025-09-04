@@ -31,6 +31,9 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARN, ERROR) | No | `INFO` |
 | `REMOVE_BOOKMARKS` | Remove bookmarks after saving to Dynalist | No | `false` |
 | `CLEANUP_PROCESSED_BOOKMARKS` | One-time cleanup of already processed bookmarks | No | `false` |
+| `NTFY_SERVER` | URL of the ntfy server | No | `http://ntfy:80` |
+| `NTFY_TOPIC` | ntfy topic to send notifications to | No | `tw2dynalist` |
+| `NTFY_PORT` | Port to expose the ntfy web UI on | No | `8081` |
 
 ## Getting Twitter API Credentials
 
@@ -176,6 +179,57 @@ TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
    - No need to expose ports when using Traefik
 
 **Note**: When using Traefik, the callback server will be accessible via HTTPS on your domain, providing secure OAuth authentication.
+
+## Push Notifications with ntfy
+
+This application can send push notifications when a new bookmark is saved to Dynalist. It uses a self-hosted [ntfy](httpshttps://ntfy.sh/) service, which is included in the `docker-compose.yml` file and will be started automatically.
+
+### Receiving Notifications
+
+To receive notifications, you need to subscribe to your ntfy topic.
+
+#### Local Network Access
+
+If your phone or computer is on the same network as your Docker server, you can subscribe using the server's local IP address.
+
+1.  **Start the services**: `docker-compose up -d`
+2.  **Find your server's local IP address**.
+3.  **Subscribe to the topic**: Open the ntfy app or your web browser and subscribe to `http://<your-local-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
+
+By default, the `NTFY_PORT` is `8081` and the `NTFY_TOPIC` is `tw2dynalist`.
+
+#### External Access (via Traefik)
+
+For receiving notifications when you are outside your local network, you need to expose the `ntfy` service to the internet. The recommended way is to use the existing Traefik integration.
+
+1.  **Ensure Traefik is set up** and you have a domain name pointing to your server.
+2.  **Enable Traefik** in your `.env` file by setting `TRAEFIK_ENABLE=true`.
+3.  **Set your ntfy domain** in the `.env` file:
+    ```
+    NTFY_DOMAIN=ntfy.yourdomain.com
+    ```
+4.  **Deploy the stack**: `docker-compose up -d`. Traefik will automatically create the route and handle SSL for `https://ntfy.yourdomain.com`.
+5.  **Subscribe to the topic**: Use the ntfy app or a web browser to subscribe to your public topic URL: `https://ntfy.yourdomain.com/${NTFY_TOPIC}`.
+
+This method is more secure and is the recommended way to receive notifications on mobile devices.
+
+### Securing ntfy (Recommended)
+
+If your ntfy server is exposed to the internet, it is **strongly recommended** that you secure it with a username and password. The included `ntfy/server.yml` configuration enables authentication and denies access to unauthenticated users by default.
+
+User creation is now automated. To secure your server:
+
+1.  **Set credentials in `.env` file**: Open your `.env` file and set the `NTFY_USERNAME` and `NTFY_PASSWORD` variables.
+    ```
+    NTFY_USERNAME=myuser
+    NTFY_PASSWORD=a_very_secure_password
+    ```
+2.  **Start the services**: Run `docker-compose up -d`.
+    On the first run, a new user with the credentials you provided will be created automatically. The server will now be secured.
+
+3.  **Subscribe with credentials**: When you subscribe to your topic in the ntfy mobile or web app, you will now need to use the username and password you defined in your `.env` file.
+
+The application (`tw2dynalist`) will also use these credentials to publish notifications automatically.
 
 ## Bookmark Management
 

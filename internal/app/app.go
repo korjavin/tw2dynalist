@@ -15,6 +15,7 @@ import (
 	"github.com/korjavin/tw2dynalist/internal/config"
 	"github.com/korjavin/tw2dynalist/internal/dynalist"
 	"github.com/korjavin/tw2dynalist/internal/logger"
+	"github.com/korjavin/tw2dynalist/internal/ntfy"
 	"github.com/korjavin/tw2dynalist/internal/scheduler"
 	"github.com/korjavin/tw2dynalist/internal/storage"
 	"github.com/korjavin/tw2dynalist/internal/twitter"
@@ -30,6 +31,7 @@ type App struct {
 	Scheduler scheduler.Scheduler
 	Metrics   *Metrics
 	Mux       *http.ServeMux
+	Ntfy      ntfy.Client
 }
 
 // New creates a new App.
@@ -55,6 +57,8 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("failed to initialize Twitter client: %v", err)
 	}
 
+	ntfyClient := ntfy.NewClient(cfg.NtfyServer, cfg.NtfyTopic, cfg.NtfyUsername, cfg.NtfyPassword, log)
+
 	app := &App{
 		Config:   cfg,
 		Logger:   log,
@@ -63,6 +67,7 @@ func New() (*App, error) {
 		Twitter:  twitterClient,
 		Metrics:  NewMetrics(cfg.CheckInterval),
 		Mux:      mux,
+		Ntfy:     ntfyClient,
 	}
 
 	app.Scheduler = scheduler.NewSimpleScheduler(cfg.CheckInterval, app.processBookmarks, log)
@@ -155,6 +160,10 @@ func (a *App) processBookmarks() {
 
 		a.Storage.MarkProcessed(tweet.ID)
 		processed++
+
+		if err := a.Ntfy.Send(tweet.Text, "New Bookmark Saved to Dynalist"); err != nil {
+			a.Logger.Warn("Failed to send ntfy notification for tweet %s: %v", tweet.ID, err)
+		}
 
 		if a.Config.RemoveBookmarks {
 			if err := a.Twitter.RemoveBookmark(tweet.ID); err != nil {

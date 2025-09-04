@@ -20,6 +20,10 @@ type Config struct {
 	RemoveBookmarks           bool
 	CleanupProcessedBookmarks bool
 	CallbackPort              string
+	NtfyServer                string
+	NtfyTopic                 string
+	NtfyUsername              string
+	NtfyPassword              string
 }
 
 // Load reads configuration from environment variables and returns a Config struct.
@@ -87,6 +91,18 @@ func Load() (*Config, error) {
 		callbackPort = "8080"
 	}
 
+	ntfyServer := os.Getenv("NTFY_SERVER")
+	if ntfyServer == "" {
+		ntfyServer = "http://ntfy:80"
+	}
+	ntfyTopic := os.Getenv("NTFY_TOPIC")
+	if ntfyTopic == "" {
+		ntfyTopic = "tw2dynalist"
+	}
+
+	ntfyUsername := os.Getenv("NTFY_USERNAME")
+	ntfyPassword := os.Getenv("NTFY_PASSWORD")
+
 	return &Config{
 		DynalistToken:             dynalistToken,
 		TwitterClientID:           twitterClientID,
@@ -100,5 +116,9 @@ func Load() (*Config, error) {
 		RemoveBookmarks:           removeBookmarks,
 		CleanupProcessedBookmarks: cleanupProcessedBookmarks,
 		CallbackPort:              callbackPort,
+		NtfyServer:                ntfyServer,
+		NtfyTopic:                 ntfyTopic,
+		NtfyUsername:              ntfyUsername,
+		NtfyPassword:              ntfyPassword,
 	}, nil
 }
