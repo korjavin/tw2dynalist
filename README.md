@@ -182,7 +182,7 @@ TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
 
 ## Push Notifications with ntfy
 
-This application can send push notifications when a new bookmark is saved to Dynalist. It uses a self-hosted [ntfy](httpshttps://ntfy.sh/) service, which is included in the `docker-compose.yml` file and will be started automatically.
+This application can send push notifications when a new bookmark is saved to Dynalist. It uses a self-hosted [ntfy](https://ntfy.sh/) service, which is included in the `docker-compose.yml` file and will be started automatically.
 
 ### Receiving Notifications
 
