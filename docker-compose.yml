@@ -22,6 +22,8 @@ services:
       - CALLBACK_PORT=${CALLBACK_PORT:-8080}
       - NTFY_SERVER=${NTFY_SERVER:-http://ntfy:80}
       - NTFY_TOPIC=${NTFY_TOPIC:-tw2dynalist}
+      - NTFY_USERNAME=${NTFY_USERNAME}
+      - NTFY_PASSWORD=${NTFY_PASSWORD}
     volumes:
       - tw2dynalist_data:/app/data
     ports:
@@ -48,9 +50,14 @@ services:
     restart: unless-stopped
     networks:
       - vaultwarden_default
-    command: serve
+    entrypoint: ["/bin/sh", "/ntfy/entrypoint.sh"]
+    command: "serve"
+    environment:
+      - NTFY_USERNAME=${NTFY_USERNAME}
+      - NTFY_PASSWORD=${NTFY_PASSWORD}
     volumes:
       - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ./ntfy/entrypoint.sh:/ntfy/entrypoint.sh:ro
       - ntfy_data:/var/lib/ntfy
       - ntfy_cache:/var/cache/ntfy
       - ntfy_etc:/etc/ntfy

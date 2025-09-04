@@ -217,26 +217,19 @@ This method is more secure and is the recommended way to receive notifications o
 
 If your ntfy server is exposed to the internet, it is **strongly recommended** that you secure it with a username and password. The included `ntfy/server.yml` configuration enables authentication and denies access to unauthenticated users by default.
 
-Follow these steps to create a user and secure your server:
+User creation is now automated. To secure your server:
 
-1.  **Add a user to ntfy**: Run the following command to create a new user. You will be prompted to enter a password. Replace `myuser` with your desired username.
-    ```bash
-    docker-compose run --rm ntfy ntfy user add myuser
-    ```
-    This command will create the `user.db` file inside the `ntfy_data` volume.
-
-2.  **Set credentials for the application**: Open your `.env` file and set the username and password you just created. The application needs these to publish notifications.
+1.  **Set credentials in `.env` file**: Open your `.env` file and set the `NTFY_USERNAME` and `NTFY_PASSWORD` variables.
     ```
     NTFY_USERNAME=myuser
-    NTFY_PASSWORD=your_password_here
+    NTFY_PASSWORD=a_very_secure_password
     ```
+2.  **Start the services**: Run `docker-compose up -d`.
+    On the first run, a new user with the credentials you provided will be created automatically. The server will now be secured.
 
-3.  **Restart the services**:
-    ```bash
-    docker-compose restart tw2dynalist
-    ```
+3.  **Subscribe with credentials**: When you subscribe to your topic in the ntfy mobile or web app, you will now need to use the username and password you defined in your `.env` file.
 
-4.  **Subscribe with credentials**: When you subscribe to your topic in the ntfy mobile or web app, you will now need to enter your username and password.
+The application (`tw2dynalist`) will also use these credentials to publish notifications automatically.
 
 ## Bookmark Management
 
