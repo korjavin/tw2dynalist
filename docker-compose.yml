@@ -1,12 +1,15 @@
 version: '3.8'
 
+networks:
+  tw2dynalist_net:
+
 services:
   tw2dynalist:
     image: ghcr.io/korjavin/tw2dynalist:latest
     container_name: tw2dynalist
     restart: unless-stopped
     networks:
-      - vaultwarden_default
+      - tw2dynalist_net
     environment:
       - DYNALIST_TOKEN=${DYNALIST_TOKEN}
       - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
@@ -20,6 +23,8 @@ services:
       - REMOVE_BOOKMARKS=${REMOVE_BOOKMARKS:-false}
       - CLEANUP_PROCESSED_BOOKMARKS=${CLEANUP_PROCESSED_BOOKMARKS:-false}
       - CALLBACK_PORT=${CALLBACK_PORT:-8080}
+      - NTFY_SERVER=${NTFY_SERVER:-http://ntfy:80}
+      - NTFY_TOPIC=${NTFY_TOPIC:-tw2dynalist}
     volumes:
       - tw2dynalist_data:/app/data
     ports:
@@ -40,9 +45,25 @@ services:
       # Watchtower auto-update
       - "com.centurylinklabs.watchtower.enable=true"
 
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: ntfy
+    restart: unless-stopped
+    networks:
+      - tw2dynalist_net
+    command: serve
+    volumes:
+      - ntfy_cache:/var/cache/ntfy
+      - ntfy_etc:/etc/ntfy
+    ports:
+      - "${NTFY_PORT:-8081}:80"
+    healthcheck:
+      test: ["wget", "--no-verbose", "--spider", "http://localhost:80/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   tw2dynalist_data:
-
-networks:
-  vaultwarden_default:
-    external: true
+  ntfy_cache:
+  ntfy_etc:

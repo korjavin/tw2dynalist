@@ -31,6 +31,9 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | `LOG_LEVEL` | Logging level (DEBUG, INFO, WARN, ERROR) | No | `INFO` |
 | `REMOVE_BOOKMARKS` | Remove bookmarks after saving to Dynalist | No | `false` |
 | `CLEANUP_PROCESSED_BOOKMARKS` | One-time cleanup of already processed bookmarks | No | `false` |
+| `NTFY_SERVER` | URL of the ntfy server | No | `http://ntfy:80` |
+| `NTFY_TOPIC` | ntfy topic to send notifications to | No | `tw2dynalist` |
+| `NTFY_PORT` | Port to expose the ntfy web UI on | No | `8081` |
 
 ## Getting Twitter API Credentials
 
@@ -176,6 +179,20 @@ TWITTER_REDIRECT_URL=https://tw2dynalist.yourdomain.com/callback
    - No need to expose ports when using Traefik
 
 **Note**: When using Traefik, the callback server will be accessible via HTTPS on your domain, providing secure OAuth authentication.
+
+## Push Notifications with ntfy
+
+This application can send push notifications when a new bookmark is saved to Dynalist. It uses a self-hosted [ntfy](httpshttps://ntfy.sh/) service, which is included in the `docker-compose.yml` file and will be started automatically.
+
+To receive notifications:
+
+1.  **Start the services**: `docker-compose up -d`
+2.  **Find your server IP address**. This will be the IP address of the machine running Docker.
+3.  **Subscribe to the topic**:
+    - **Mobile App**: Download the ntfy app for [Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy) or [iOS](https://apps.apple.com/us/app/ntfy/id1625396117) and subscribe to the topic: `http://<server-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
+    - **Web Client**: Open your browser and go to `http://<server-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
+
+By default, the `NTFY_PORT` is `8081` and the `NTFY_TOPIC` is `tw2dynalist`. You can change these in your `.env` file.
 
 ## Bookmark Management
 
