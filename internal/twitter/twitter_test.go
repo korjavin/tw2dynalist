@@ -18,14 +18,6 @@ type mockAuthorizer struct{}
 
 func (m *mockAuthorizer) Add(req *http.Request) {}
 
-// mockTokenProvider is a mock implementation of the TokenProvider interface.
-type mockTokenProvider struct{}
-
-func (m *mockTokenProvider) Token() *oauth2.Token {
-	return &oauth2.Token{
-		AccessToken: "test_access_token",
-	}
-}
 
 // mockStorage is a mock implementation of the Storage interface.
 type mockStorage struct {
@@ -68,10 +60,13 @@ func TestAPIClient_GetBookmarks(t *testing.T) {
 			Client:     server.Client(),
 			Host:       server.URL,
 		},
-		userID:        "test_user_id",
-		logger:        log,
-		config:        cfg,
-		tokenProvider: &mockTokenProvider{},
+		userID: "test_user_id",
+		logger: log,
+		config: cfg,
+		token: &oauth2.Token{
+			AccessToken: "test_access_token",
+		},
+		oauth2Config: &oauth2.Config{},
 	}
 
 	tweets, err := client.GetBookmarks()
@@ -111,10 +106,13 @@ func TestAPIClient_RemoveBookmark(t *testing.T) {
 			Client:     server.Client(),
 			Host:       server.URL,
 		},
-		userID:        "test_user_id",
-		logger:        log,
-		config:        cfg,
-		tokenProvider: &mockTokenProvider{},
+		userID: "test_user_id",
+		logger: log,
+		config: cfg,
+		token: &oauth2.Token{
+			AccessToken: "test_access_token",
+		},
+		oauth2Config: &oauth2.Config{},
 	}
 
 	err := client.RemoveBookmark("123")
@@ -146,10 +144,13 @@ func TestAPIClient_CleanupProcessedBookmarks(t *testing.T) {
 			Client:     server.Client(),
 			Host:       server.URL,
 		},
-		userID:        "test_user_id",
-		logger:        log,
-		config:        cfg,
-		tokenProvider: &mockTokenProvider{},
+		userID: "test_user_id",
+		logger: log,
+		config: cfg,
+		token: &oauth2.Token{
+			AccessToken: "test_access_token",
+		},
+		oauth2Config: &oauth2.Config{},
 	}
 
 	err := client.CleanupProcessedBookmarks(storage)
