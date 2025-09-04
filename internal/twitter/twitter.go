@@ -2,6 +2,7 @@ package twitter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -209,16 +210,19 @@ func (c *APIClient) GetBookmarks() ([]Tweet, error) {
 			bookmarksResponse, err = c.client.TweetBookmarksLookup(context.Background(), c.userID, opts)
 		}
 		if err != nil {
-			if strings.Contains(err.Error(), "429") {
-				c.logger.Warn("Twitter API rate limit hit on bookmarks endpoint.")
-				return []Tweet{}, nil
+			var twitterErr *twitterv2.ErrorResponse
+			if errors.As(err, &twitterErr) {
+				if twitterErr.StatusCode == 429 {
+					c.logger.Warn("Twitter API rate limit hit on bookmarks endpoint. Original message: %s", twitterErr.Detail)
+					return []Tweet{}, nil
+				}
 			}
 			return nil, fmt.Errorf("failed to get bookmarks: %v", err)
 		}
 	}
 
 	if bookmarksResponse.Raw == nil || len(bookmarksResponse.Raw.Tweets) == 0 {
-		c.logger.Info("No bookmarks found")
+		c.logger.Info("Found 0 bookmarked tweets")
 		return []Tweet{}, nil
 	}
 
