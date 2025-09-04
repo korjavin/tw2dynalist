@@ -33,11 +33,12 @@ type Client interface {
 
 // APIClient implements the Client interface for the Twitter API.
 type APIClient struct {
-	client        *twitterv2.Client
-	userID        string
-	logger        *logger.Logger
-	config        *config.Config
-	tokenProvider auth.TokenProvider
+	client       *twitterv2.Client
+	userID       string
+	logger       *logger.Logger
+	config       *config.Config
+	oauth2Config *oauth2.Config
+	token        *oauth2.Token
 }
 
 // NewClient creates a new Twitter API client.
@@ -104,23 +105,6 @@ func NewClient(cfg *config.Config, logger *logger.Logger, mux *http.ServeMux) (*
 			return nil, fmt.Errorf("failed to load token: %v", err)
 		}
 		logger.Debug("Loaded token with userID: %s", userID)
-
-		if token.Expiry.Before(time.Now().Add(5 * time.Minute)) {
-			logger.Info("Token expires soon, attempting to refresh")
-			if token.RefreshToken != "" {
-				newToken, err := oauth2Config.TokenSource(context.Background(), token).Token()
-				if err != nil {
-					return nil, fmt.Errorf("token expired and refresh failed: %v", err)
-				}
-				logger.Info("Token refreshed successfully")
-				if err := auth.SaveToken(cfg.TokenFilePath, newToken, userID); err != nil {
-					logger.Warn("Failed to save refreshed token: %v", err)
-				}
-				token = newToken
-			} else {
-				return nil, fmt.Errorf("token expires soon and no refresh token available - manual re-authorization required")
-			}
-		}
 	}
 
 	authorizer := auth.NewAuthorizer(token)
@@ -154,13 +138,35 @@ func NewClient(cfg *config.Config, logger *logger.Logger, mux *http.ServeMux) (*
 	}
 
 	apiClient := &APIClient{
-		client:        client,
-		userID:        userID,
-		logger:        logger,
-		config:        cfg,
-		tokenProvider: authorizer,
+		client:       client,
+		userID:       userID,
+		logger:       logger,
+		config:       cfg,
+		oauth2Config: oauth2Config,
+		token:        token,
 	}
 	return apiClient, nil
+}
+
+func (c *APIClient) refreshToken() error {
+	c.logger.Info("Attempting to refresh token")
+	if c.token.RefreshToken == "" {
+		return fmt.Errorf("no refresh token available")
+	}
+
+	newToken, err := c.oauth2Config.TokenSource(context.Background(), c.token).Token()
+	if err != nil {
+		return fmt.Errorf("failed to refresh token: %v", err)
+	}
+
+	c.logger.Info("Token refreshed successfully")
+	if err := auth.SaveToken(c.config.TokenFilePath, newToken, c.userID); err != nil {
+		c.logger.Warn("Failed to save refreshed token: %v", err)
+	}
+
+	c.token = newToken
+	c.client.Authorizer = auth.NewAuthorizer(c.token)
+	return nil
 }
 
 // GetBookmarks retrieves bookmarked tweets for the authenticated user.
@@ -186,11 +192,29 @@ func (c *APIClient) GetBookmarks() ([]Tweet, error) {
 
 	bookmarksResponse, err := c.client.TweetBookmarksLookup(context.Background(), c.userID, opts)
 	if err != nil {
-		if strings.Contains(err.Error(), "429") {
-			c.logger.Warn("Twitter API rate limit hit on bookmarks endpoint.")
-			return []Tweet{}, nil
+		if strings.Contains(err.Error(), "401") {
+			c.logger.Warn("Received 401 Unauthorized, attempting to refresh token")
+			if err := c.refreshToken(); err != nil {
+				c.logger.Error("Failed to refresh token: %v", err)
+				if _, statErr := os.Stat(c.config.TokenFilePath); !os.IsNotExist(statErr) {
+					if removeErr := os.Remove(c.config.TokenFilePath); removeErr != nil {
+						c.logger.Error("Failed to remove token file: %v", removeErr)
+					} else {
+						c.logger.Info("Removed token file, please re-authenticate")
+					}
+				}
+				return nil, fmt.Errorf("failed to refresh token, re-authentication required: %v", err)
+			}
+			c.logger.Info("Retrying to get bookmarks after token refresh")
+			bookmarksResponse, err = c.client.TweetBookmarksLookup(context.Background(), c.userID, opts)
 		}
-		return nil, fmt.Errorf("failed to get bookmarks: %v", err)
+		if err != nil {
+			if strings.Contains(err.Error(), "429") {
+				c.logger.Warn("Twitter API rate limit hit on bookmarks endpoint.")
+				return []Tweet{}, nil
+			}
+			return nil, fmt.Errorf("failed to get bookmarks: %v", err)
+		}
 	}
 
 	if bookmarksResponse.Raw == nil || len(bookmarksResponse.Raw.Tweets) == 0 {
@@ -232,14 +256,28 @@ func (c *APIClient) RemoveBookmark(tweetID string) error {
 		return fmt.Errorf("failed to create remove bookmark request: %v", err)
 	}
 
-	token := c.tokenProvider.Token()
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token.AccessToken))
 
 	resp, err := c.client.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send remove bookmark request: %v", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		c.logger.Warn("Received 401 Unauthorized, attempting to refresh token")
+		if err := c.refreshToken(); err != nil {
+			return fmt.Errorf("failed to refresh token during bookmark removal: %v", err)
+		}
+
+		c.logger.Info("Retrying to remove bookmark after token refresh")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token.AccessToken))
+		resp, err = c.client.Client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send remove bookmark request on retry: %v", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	if resp.StatusCode == 200 || resp.StatusCode == 204 {
 		c.logger.Debug("Successfully removed bookmark for tweet %s", tweetID)
