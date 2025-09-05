@@ -51,8 +51,10 @@ services:
     networks:
       - vaultwarden_default
     command: "serve"
+    environment:
+      - NTFY_BEHIND_PROXY=true
+      - NTFY_AUTH_DEFAULT_ACCESS=read-write
     volumes:
-      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
       - ntfy_data:/var/lib/ntfy
       - ntfy_cache:/var/cache/ntfy
     ports:
