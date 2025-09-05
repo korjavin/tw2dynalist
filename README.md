@@ -33,7 +33,7 @@ This bot monitors a Twitter user's bookmarks and automatically adds them to your
 | `CLEANUP_PROCESSED_BOOKMARKS` | One-time cleanup of already processed bookmarks | No | `false` |
 | `NTFY_SERVER` | URL of the ntfy server | No | `http://ntfy:80` |
 | `NTFY_TOPIC` | ntfy topic to send notifications to | No | `tw2dynalist` |
-| `NTFY_PORT` | Port to expose the ntfy web UI on | No | `8081` |
+| `NTFY_PORT` | Port to expose the ntfy web UI on | No | `8082` |
 
 ## Getting Twitter API Credentials
 
@@ -196,7 +196,7 @@ If your phone or computer is on the same network as your Docker server, you can 
 2.  **Find your server's local IP address**.
 3.  **Subscribe to the topic**: Open the ntfy app or your web browser and subscribe to `http://<your-local-ip>:${NTFY_PORT}/${NTFY_TOPIC}`.
 
-By default, the `NTFY_PORT` is `8081` and the `NTFY_TOPIC` is `tw2dynalist`.
+By default, the `NTFY_PORT` is `8082` and the `NTFY_TOPIC` is `tw2dynalist`.
 
 #### External Access (via Traefik)
 
