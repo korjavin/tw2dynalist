@@ -50,17 +50,11 @@ services:
     restart: unless-stopped
     networks:
       - vaultwarden_default
-    entrypoint: ["/bin/sh", "/ntfy/entrypoint.sh"]
     command: "serve"
-    environment:
-      - NTFY_USERNAME=${NTFY_USERNAME}
-      - NTFY_PASSWORD=${NTFY_PASSWORD}
     volumes:
       - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
-      - ./ntfy/entrypoint.sh:/ntfy/entrypoint.sh:ro
       - ntfy_data:/var/lib/ntfy
       - ntfy_cache:/var/cache/ntfy
-      - ntfy_etc:/etc/ntfy
     ports:
       - "${NTFY_PORT:-8082}:80"
     healthcheck:
@@ -79,7 +73,6 @@ volumes:
   tw2dynalist_data:
   ntfy_data:
   ntfy_cache:
-  ntfy_etc:
 
 networks:
   vaultwarden_default:
