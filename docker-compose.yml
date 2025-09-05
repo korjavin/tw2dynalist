@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   tw2dynalist:
-    image: ghcr.io/korjavin/tw2dynalist:latest
+    image: ghcr.io/korjavin/tw2dynalist:sha-94e2e6b
     container_name: tw2dynalist
     restart: unless-stopped
     networks:
